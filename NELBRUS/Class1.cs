@@ -273,7 +273,7 @@ public sealed class Program : MyGridProgram {
 
         public SdSubPCmd(ushort id, string name, MyVersion v = null, string info = NA) : base(id, name, v, info)
         {
-            CmdR = new Dictionary<string, Cmd> { { "help", new Cmd(CmdHelp, "View commands help.") } };
+            CmdR = new Dictionary<string, Cmd> { { "help", new Cmd(CmdHelp, "View commands help.", "Syntax:\n/help - show available commands;\n/help <command> - show command information.") } };
         }
         public SdSubPCmd(ushort id, string name, string info) : this(id, name, null, info) { }
         /// <summary>Used by NELBRUS in start method to run new subprogram.</summary>
@@ -341,10 +341,10 @@ public sealed class Program : MyGridProgram {
             GTS = P.GridTerminalSystem;
             SetCmd(new Dictionary<string, Cmd>
             {
-                { "start", new Cmd(CmdRun, "Start initialized subprogram by id. Check id by /isplist.") },
-                { "stop", new Cmd(CmdStop, "Stop runned subprogram by id. Check id by /splist.") },
-                { "sp", new Cmd(CmdSP, "View runned subprograms or run the subprogram command.") },
-                { "isp", new Cmd(CmdISP, "View information about initilized subprogram.") },
+                { "start", new Cmd(CmdRun, "Start initialized subprogram by id.", "Syntax:\n/start <id> - start new subprogram, check id by /isp.") },
+                { "stop", new Cmd(CmdStop, "Stop runned subprogram by id.", "Syntax:\n/stop <id> - stop subprogram, check id by /sp.") },
+                { "sp", new Cmd(CmdSP, "View runned subprograms or run the subprogram command.", "Syntax:\n/sp - view runned subprograms;\n/sp <id> - view runned subprogram information;\n/sp <id> <command> [arguments] - run the subprogram command.") },
+                { "isp", new Cmd(CmdISP, "View initilized subprograms information.", "Syntax:\n/isp - view initilized subprograms;\n/isp <id> - view initilized subprogram information.") },
                 { "clr", new Cmd(CmdClearC, "Clearing the command interface.") }, // todo переделать под отправителя
             });
             P.Runtime.UpdateFrequency = UpdateFrequency.Update1;
@@ -500,17 +500,22 @@ public sealed class Program : MyGridProgram {
         string CmdRun(List<string> a)
         {
             ushort i;
-            if (a.Count() > 0 && ushort.TryParse(a[0], out i) && InitSP.Count > i) return OS.RSP(InitSP[i]) == null ? $"Attempt to run new subprogram {F.Brckt(InitSP[i].Name)} failed." : $"New subprogram {F.Brckt(InitSP[i].Name)} runned.";
+            if (a.Count() > 0 && ushort.TryParse(a[0], out i))
+                if (InitSP.Count > i)
+                    return OS.RSP(InitSP[i]) == null ? $"Attempt to run new subprogram {F.Brckt(InitSP[i].Name)} failed." : $"New subprogram {F.Brckt(InitSP[i].Name)} runned.";
+                else return $"Initialized subprogram with id [{i}] not exist. {mTUH}";
             else return mAE;
         }
         string CmdStop(List<string> a)
         {
             ushort i;
-            if (a.Count() > 0 && ushort.TryParse(a[0], out i) && SP.ContainsKey(i))
-            {
-                string r = $"Subprogram {F.Brckt(SP[i].Name)} ";
-                return r + (SSP(SP[i]) ? "successfully stopped." : $"can`t be stopped now.");
-            }
+            if (a.Count() > 0 && ushort.TryParse(a[0], out i))
+                if (SP.ContainsKey(i))
+                {
+                    string r = $"Subprogram {F.Brckt(SP[i].Name)} ";
+                    return r + (SSP(SP[i]) ? "successfully stopped." : $"can`t be stopped now.");
+                }
+                else return $"Subprogram with id [{i}] not exist. {mTUH}";
             else return mAE;
         }
         string CmdSP(List<string> a)
