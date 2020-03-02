@@ -22,9 +22,9 @@ public sealed class Program : MyGridProgram {
         OS.Ready(this);
 
         //SetEchoCtrl(new CEcho()) // Place to initialize custom echo controller
-        //OS.ISP(new JNTicker());
+        OS.ISP(new JNTicker());
         OS.ISP(new JNTimer());
-        //OS.ISP(new JNLST());
+        OS.ISP(new JNLST());
 
         OS.Go();
     } 
