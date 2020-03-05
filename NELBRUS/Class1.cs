@@ -22,9 +22,9 @@ public sealed class Program : MyGridProgram {
         OS.Ready(this);
 
         //SetEchoCtrl(new CEcho()) // Place to initialize custom echo controller
-        //OS.ISP(new JNTicker());
+        OS.ISP(new JNTicker());
         OS.ISP(new JNTimer());
-        //OS.ISP(new JNLST());
+        OS.ISP(new JNLST());
 
         OS.Go();
     } 
@@ -135,7 +135,7 @@ public sealed class Program : MyGridProgram {
         public MyVersion V { get; }
         public string Info { get; protected set; }
         
-        public SubP(string name, MyVersion v = null, string info = NA) { Name = name; V = v; Info = info; }
+        public SubP(string name, MyVersion v = null, string info = "Description " + NA + ".") { Name = name; V = v; Info = info; }
         public SubP(string name, string info) { Name = name; V = null; Info = info; }
 
         /// <summary>Run new subprogram.</summary>
@@ -273,7 +273,7 @@ public sealed class Program : MyGridProgram {
 
         public SdSubPCmd(ushort id, string name, MyVersion v = null, string info = NA) : base(id, name, v, info)
         {
-            CmdR = new Dictionary<string, Cmd> { { "help", new Cmd(CmdHelp, "View commands help.", "Syntax:\n/help - show available commands;\n/help <command> - show command information.") } };
+            CmdR = new Dictionary<string, Cmd> { { "help", new Cmd(CmdHelp, "View commands help.", "/help - show available commands;\n/help <command> - show command information.") } };
         }
         public SdSubPCmd(ushort id, string name, string info) : this(id, name, null, info) { }
         /// <summary>Used by NELBRUS in start method to run new subprogram.</summary>
@@ -323,7 +323,7 @@ public sealed class Program : MyGridProgram {
         public EchoController EchoCtrl { get; private set; }
         #endregion Properties
 
-        public NLB() : base(0, "NELBRUS", new MyVersion(0, 3, 8, new DateTime(2020, 02, 22)), "Your operation system.")
+        public NLB() : base(0, "NELBRUS", new MyVersion(0, 3, 10, new DateTime(2020, 03, 05)), "Your operation system.")
         {
             InitSP = new List<SubP>();
             Tick = 0;
@@ -341,10 +341,10 @@ public sealed class Program : MyGridProgram {
             GTS = P.GridTerminalSystem;
             SetCmd(new Dictionary<string, Cmd>
             {
-                { "start", new Cmd(CmdRun, "Start initialized subprogram by id.", "Syntax:\n/start <id> - start new subprogram, check id by /isp.") },
-                { "stop", new Cmd(CmdStop, "Stop runned subprogram by id.", "Syntax:\n/stop <id> - stop subprogram, check id by /sp.") },
-                { "sp", new Cmd(CmdSP, "View runned subprograms or run the subprogram command.", "Syntax:\n/sp - view runned subprograms;\n/sp <id> - view runned subprogram information;\n/sp <id> <command> [arguments] - run the subprogram command.") },
-                { "isp", new Cmd(CmdISP, "View initilized subprograms information.", "Syntax:\n/isp - view initilized subprograms;\n/isp <id> - view initilized subprogram information.") },
+                { "start", new Cmd(CmdRun, "Start initialized subprogram by id.", "/start <id> - start new subprogram, check id by /isp.") },
+                { "stop", new Cmd(CmdStop, "Stop runned subprogram by id.", "/stop <id> - stop subprogram, check id by /sp.") },
+                { "sp", new Cmd(CmdSP, "View runned subprograms or run the subprogram command.", "/sp - view runned subprograms;\n/sp <id> - view runned subprogram information;\n/sp <id> <command> [arguments] - run the subprogram command.") },
+                { "isp", new Cmd(CmdISP, "View initilized subprograms information.", "/isp - view initilized subprograms;\n/isp <id> - view initilized subprogram information.") },
                 { "clr", new Cmd(CmdClearC, "Clearing the command interface.") }, // todo переделать под отправителя
             });
             P.Runtime.UpdateFrequency = UpdateFrequency.Update1;
@@ -448,7 +448,7 @@ public sealed class Program : MyGridProgram {
                     goto case UpdateType.Update10;
                 default:
                     if (a.StartsWith("/"))
-                        EchoCtrl.CShow($"> {Cmd(a.Substring(1), CmdR) ?? "Done."}");
+                        EchoCtrl.CShow($"> {Cmd(a.Substring(1), CmdR)}");
                     break;
             }
         }
@@ -469,10 +469,12 @@ public sealed class Program : MyGridProgram {
         /// <param name="r">Command registry.</param>
         public static string Cmd(string s, Dictionary<string, Cmd> r) // todo sender
         {
-            string n;
+            string n, m;
             List<string> a;
             CP(s.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).ToList(), out n, out a);
-            return Cmd(r, n, a);
+            if ((m = Cmd(r, n, a)) == null || m == "")
+                return "Done.";
+            return m;
         }
         /// <summary>Command parse. Returns command name and arguments. Arguments marked as "separated words" (in quotation marks) will be considered as a single argument.</summary>
         /// <param name="s">Splitted words of command.</param>
@@ -482,9 +484,8 @@ public sealed class Program : MyGridProgram {
         {
             a = new List<string>();
             if (s.Count == 0) { n = ""; return; }
-            n = s[0];
             var f = false;
-            for (int i = 1; i < s.Count; i++)
+            for (int i = 0; i < s.Count; i++)
             {
                 if (f)
                     if (f = !s[i].EndsWith("\"")) a[a.Count - 1] += $" {s[i]}";
@@ -493,6 +494,8 @@ public sealed class Program : MyGridProgram {
                     if (f = s[i].StartsWith("\"")) a.Add(s[i].Substring(1));
                 else a.Add(s[i]);
             }
+            n = a[0];
+            a.RemoveAt(0);
         }
         #endregion Methods
 
@@ -553,6 +556,9 @@ public sealed class Program : MyGridProgram {
 
         public abstract class EchoController : SdSubP
         {
+            /// <summary>Duration of the custom information show.</summary>
+            protected uint DT { get; set; }
+
             public EchoController(string n, MyVersion v = null, string i = NA) : base(1, n, v, i) { }
 
             /// <summary>Echo controller works with NELBRUS. Do not stop it.</summary>
@@ -563,7 +569,7 @@ public sealed class Program : MyGridProgram {
                 OS.P.Echo("OS NELBRUS and used echo controller working but not configured.");
             }
             /// <summary>Show custom info at echo for t ticks.</summary>
-            public virtual void CShow(string s, uint t = 1800) { }
+            public virtual void CShow(string s) { }
             /// <summary>Remove custom info in echo.</summary>
             public virtual void CClr() { }
         }
@@ -588,6 +594,7 @@ public sealed class Program : MyGridProgram {
                     { 1, new object[] { } }
                 };
                 R = AddAct(Refresh + (Act)OInd.Update, 30, 1);
+                DT = F.TTT(45);
                 return this;
             }
             /// <summary>Refresh information at echo.</summary>
@@ -602,11 +609,11 @@ public sealed class Program : MyGridProgram {
                 OS.P.Echo(t.ToString());
             }
             /// <summary>Show custom info at echo for t ticks.</summary>
-            public override void CShow(string i, uint t = 1800)
+            public override void CShow(string i)
             {
                 RemDefA(ref C);
                 Fields[1] = new string[] { i };
-                C = AddDefA(CClr, t);
+                C = AddDefA(CClr, DT);
             }
             /// <summary>Remove custom info in echo.</summary>
             public override void CClr()
@@ -633,25 +640,26 @@ public sealed class Program : MyGridProgram {
                     default: return $"{b}{t}{b}";
                 }
             }
-            public static string Date(DateTime date) { return date.ToString("dd.MM.yyyy"); }
-            public static string CurTime() { return DateTime.Now.ToString("HH:mm:ss"); }
+            public static string Date(DateTime dt) { return dt.ToString("dd.MM.yyyy"); }
+            public static string Time(DateTime dt) { return dt.ToString("HH:mm:ss"); }
+            public static string CurTime() { return Time(DateTime.Now); }
             /// <summary>Time to ticks.</summary>
             /// <param name="s">Seconds.</param>
             /// <param name="m">Minutes.</param>
             /// <param name="h">Hours.</param>
             public static uint TTT(byte s, byte m = 0, byte h = 0) { return (uint)(s + m * 60 + h * 3600) * 60; }
+            /// <summary>Ticks to Time</summary>
+            public static string TTT(uint t)
+            {
+                return $"{(int)(t / 3600)}:{(int)(t / 60) - (int)(t / 3600) * 60}:{(t - ((int)(t / 60) * 60)) * 10 / 6}";
+            }
             /// <summary>Get subprogram information.</summary>
             /// <param name="p">Subprogram.</param>
             /// <param name="i">Get advanced information.</param>
             public static string SPI (SubP p, bool i = false)
             {
                 string r = p.V == null ? $"{Brckt(p.Name)}" : $"{Brckt(p.Name)} v.{(string)p.V}";
-                return i ? r + $"\n{p.Info}{(p is SdSubP? $"\nCommands support: {p is SdSubPCmd}" : "")}" : r;
-            }
-            /// <summary>Ticks to Time</summary>
-            public static string TTT(uint t)
-            {
-                return $"{(int)(t / 3600)}:{(int)(t / 60) - (int)(t / 3600) * 60}:{(t - ((int)(t / 60) * 60)) * 10 / 6}";
+                return i ? r + $"\n{p.Info}{(p is SdSubP ? $"\nWas launched at [{(p as SdSubP).ST.ToString()}].\nCommands support: {p is SdSubPCmd}." : "")}" : r;
             }
     }
     }
@@ -690,7 +698,7 @@ public sealed class Program : MyGridProgram {
     #region Test Subprograms
     class JNTicker : SubP
     {
-        public JNTicker() : base("Ticker", new MyVersion(1, 0), "First subprogram for NELBRUS system. This subprogram takes LCD and show current tick on it.") { } // Used for initialisation of subprogram
+        public JNTicker() : base("Ticker", new MyVersion(1, 0), "First subprogram for NELBRUS system. This subprogram takes LCD and show current tick in it.") { } // Used for initialisation of subprogram
 
         public override SdSubP Start(ushort id) { return new TP(id, this); }
         
@@ -733,7 +741,7 @@ public sealed class Program : MyGridProgram {
 
     class JNTimer : SubP
     {
-        public JNTimer() : base("Timer") { }
+        public JNTimer() : base("Timer", "Shows the elapsed time in LCD when using the command ss.") { }
 
         public override SdSubP Start(ushort id) { return new TP(id, this); }
 
@@ -808,8 +816,8 @@ public sealed class Program : MyGridProgram {
 
             public void Ready()
             {
-                MA = AddAct(Main, 100);
                 BuildSolarArrays();
+                MA = AddAct(Main, 100);
             }
             public void Main()
             {
