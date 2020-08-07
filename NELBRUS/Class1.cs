@@ -14,8 +14,10 @@ using VRage.Game.ModAPI.Ingame;
 using SpaceEngineers.Game.ModAPI.Ingame;
 using System.Linq;
 
-public sealed class Program : MyGridProgram {
-    //======-НАЧАЛО СКРИПТА-======
+/// Nelbrus OS v.0.3.11-[07.08.20]
+
+public class Program : MyGridProgram {
+    //======-SCRIPT BEGINING-======
 
     Program()
     {
@@ -24,7 +26,8 @@ public sealed class Program : MyGridProgram {
         //SetEchoCtrl(new CEcho()) // Place to initialize custom echo controller
         OS.ISP(new JNTicker());
         OS.ISP(new JNTimer());
-        OS.ISP(new JNLST());
+        OS.ISP(new JNSolarTracker());
+        OS.ISP(new JNKonturC());
 
         OS.Go();
     } 
@@ -45,6 +48,11 @@ public sealed class Program : MyGridProgram {
     #region Global properties
     /// <summary>Not available message.</summary>
     public const string NA = "N/A";
+    /// <summary>Help message.</summary>
+    public const string mTUH = "Try use /help to fix your problem.";
+    /// <summary>Argument exception message.</summary>
+    public const string mAE = "Argument exception. " + mTUH;
+
     /// <summary>Action.</summary>
     delegate void Act();
     /// <summary>Request without arguments.</summary>
@@ -54,6 +62,7 @@ public sealed class Program : MyGridProgram {
     delegate string ReqA(List<string> a);
     /// <summary>Integer request without arguments.</summary>
     delegate int ReqI();
+
     /// <summary>Custom Action used to do it later or with frequency.</summary>
     struct CAct
     {
@@ -84,10 +93,6 @@ public sealed class Program : MyGridProgram {
         /// <param name="c">Command request.</param>
         public Cmd(ReqA c) : this(c, NA) { }
     }
-    /// <summary>Help message.</summary>
-    public const string mTUH = "Try use /help to fix your problem.";
-    /// <summary>Argument exception message.</summary>
-    public const string mAE = "Argument exception. " + mTUH;
 
     /// <summary>Represents the version number of an component or complex. Example: 2.0.3-[23.12.2019].</summary>
     class MyVersion
@@ -187,8 +192,10 @@ public sealed class Program : MyGridProgram {
         public SdSubP(ushort id, SubP p) : this(id, p.Name, p.V, p.Info) { }
 
         #region Actions management
-        /// <summary>Add new action running with frequency freq and that will be runned first time with tick span. Returns custom action to manage it.</summary>
-        protected CAct AddAct(Act act, uint freq, uint span = 0)
+        // todo RepAct (Replace Action)
+        /// <summary>Add new action triggered by the frequency freq and that will be runned first time with tick span.</summary>
+        /// <param name="ca">Action storage in subprogram</param>
+        protected void AddAct(ref CAct ca, Act act, uint freq, uint span = 0)
         {
             if (freq < 2) // Zero regarded like one
             {
@@ -209,9 +216,9 @@ public sealed class Program : MyGridProgram {
                 else Acts[t][freq] += act;
                 AA.Add(AK, new Ad(t, freq));
             }
-            return new CAct(AK++, act);
+            ca = new CAct(AK++, act);
         }
-        /// <summary>Remove action called with frequency.</summary>
+        /// <summary>Remove action triggered by the frequency.</summary>
         protected void RemAct(ref CAct a)
         {
             if (AA.ContainsKey(a.ID))
@@ -231,17 +238,18 @@ public sealed class Program : MyGridProgram {
             }
             a = new CAct(); // Removed actions have default id value 0
         }
-        /// <summary>Change action called with frequency.</summary>
-        /// <param name="a">Editable action.</param>
+        /// <summary>Change action triggered by the frequency.</summary>
+        /// <param name="ca">Editable action storage in subprogram</param>
         /// <param name="freq">New frequency.</param>
         /// <param name="span">Span to first run in ticks.</param>
-        protected CAct ChaAct(CAct a, uint freq, uint span = 0)
+        protected void ChaAct(ref CAct ca, uint freq, uint span = 0)
         {
-            var t = AddAct(a.Act, freq, span);
-            RemAct(ref a);
-            return t;
+            CAct t = new CAct();
+            AddAct(ref t, ca.Act, freq, span);
+            RemAct(ref ca);
+            ca = t;
         }
-        /// <summary>Add new deferred action that will run after time span.</summary>
+        /// <summary>Add new deferred action that will run once after time span.</summary>
         protected CAct AddDefA(Act act, uint span)
         {
             if (DefA.ContainsKey(OS.Tick + span)) DefA[OS.Tick + span] += act;
@@ -361,6 +369,7 @@ public sealed class Program : MyGridProgram {
         {
             if (CSP<CEcho>()) return; // The method will be run once
             RSP(EchoCtrl); // Run echo controller
+            // todo Run only runned the last time subprograms
             for (int i = 0; i < InitSP.Count; i++) RSP(InitSP[i]); // Run all initialized subprograms
         }
         /// <summary>Nobody cant stop it. :P</summary>
@@ -370,8 +379,8 @@ public sealed class Program : MyGridProgram {
         {
             if (!InitSP.Contains(p)) InitSP.Add(p);
         }
-        /// <summary>Returns true if subprogram of T type is currently started. Example: OS.CSP<NELBRUS>().</summary> //todo check
-        public bool CSP<T>()where T : SdSubP
+        /// <summary>Returns true if subprogram of T type is currently started. Example: OS.CSP<NELBRUS>().</summary> 
+        public bool CSP<T>()where T : SdSubP //todo check
         {
             foreach (var i in SP.Values)
             {
@@ -557,7 +566,7 @@ public sealed class Program : MyGridProgram {
         public abstract class EchoController : SdSubP
         {
             /// <summary>Duration of the custom information show.</summary>
-            protected uint DT { get; set; }
+            public uint DT { get; set; }
 
             public EchoController(string n, MyVersion v = null, string i = NA) : base(1, n, v, i) { }
 
@@ -568,7 +577,7 @@ public sealed class Program : MyGridProgram {
             {
                 OS.P.Echo("OS NELBRUS and used echo controller working but not configured.");
             }
-            /// <summary>Show custom info at echo for t ticks.</summary>
+            /// <summary>Show custom info at echo.</summary>
             public virtual void CShow(string s) { }
             /// <summary>Remove custom info in echo.</summary>
             public virtual void CClr() { }
@@ -593,7 +602,7 @@ public sealed class Program : MyGridProgram {
                     { 0, new object[] { $"OS NELBRUS v.{(string)OS.V}\nIs worked ", (Req)OInd.Get , "\nInitialized subprograms: ", (ReqI)OS.GetCountISP, "\nRunned subprograms: ", (ReqI)OS.GetCountRSP } },
                     { 1, new object[] { } }
                 };
-                R = AddAct(Refresh + (Act)OInd.Update, 30, 1);
+                AddAct(ref R, Refresh + (Act)OInd.Update, 30, 1);
                 DT = F.TTT(45);
                 return this;
             }
@@ -608,11 +617,11 @@ public sealed class Program : MyGridProgram {
                 }
                 OS.P.Echo(t.ToString());
             }
-            /// <summary>Show custom info at echo for t ticks.</summary>
-            public override void CShow(string i)
+            /// <summary>Show custom info at echo.</summary>
+            public override void CShow(string s)
             {
                 RemDefA(ref C);
-                Fields[1] = new string[] { i };
+                Fields[1] = new string[] { s };
                 C = AddDefA(CClr, DT);
             }
             /// <summary>Remove custom info in echo.</summary>
@@ -648,10 +657,22 @@ public sealed class Program : MyGridProgram {
             /// <param name="m">Minutes.</param>
             /// <param name="h">Hours.</param>
             public static uint TTT(byte s, byte m = 0, byte h = 0) { return (uint)(s + m * 60 + h * 3600) * 60; }
-            /// <summary>Ticks to Time</summary>
+            /// <summary>Ticks to Time. Returns string with converted time "hours:minutes:seconds".</summary>
+            /// <param name="t">Time in ticks.</param>
             public static string TTT(uint t)
             {
                 return $"{(int)(t / 3600)}:{(int)(t / 60) - (int)(t / 3600) * 60}:{(t - ((int)(t / 60) * 60)) * 10 / 6}";
+            }
+            /// <summary>Ticks to Time.</summary>
+            /// <param name="t">Time in ticks.</param>
+            /// <param name="s">Seconds.</param>
+            /// <param name="m">Minutes</param>
+            /// <param name="h">Hours.</param>
+            public static void TTT(uint t, out byte s, out byte m, out byte h)
+            {
+                s = (byte)((t - ((int)(t / 60) * 60)) * 10 / 6);
+                m = (byte)((int)(t / 60) - (int)(t / 3600) * 60);
+                h = (byte)(t / 3600);
             }
             /// <summary>Get subprogram information.</summary>
             /// <param name="p">Subprogram.</param>
@@ -698,7 +719,7 @@ public sealed class Program : MyGridProgram {
     #region Test Subprograms
     class JNTicker : SubP
     {
-        public JNTicker() : base("Ticker", new MyVersion(1, 0), "First subprogram for NELBRUS system. This subprogram takes LCD and show current tick in it.") { } // Used for initialisation of subprogram
+        public JNTicker() : base("Ticker", new MyVersion(1, 0), "First subprogram for NELBRUS system. This subprogram takes LCD with name \"Ticker\" and show current tick on it.") { } // Used for initialisation of subprogram
 
         public override SdSubP Start(ushort id) { return new TP(id, this); }
         
@@ -714,7 +735,7 @@ public sealed class Program : MyGridProgram {
                     AddDefA(Stop, 1);
                     return;
                 }
-                Act = AddAct(Show, 20);
+                AddAct(ref Act, Show, 20);
                 SetCmd(new Dictionary<string, Cmd>
                 {
                     { "pause", new Cmd(CmdPause, "Pause show current tick.") },
@@ -730,7 +751,7 @@ public sealed class Program : MyGridProgram {
                 //Act = ChaAct(Act, 50, false); // Example
             }
             void MePause() { RemAct(ref Act); }
-            void MePlay() { if (Act.ID == 0) Act = AddAct(Show, 20); }
+            void MePlay() { if (Act.ID == 0) AddAct(ref Act, Show, 20); }
 
             #region Commands
             string CmdPause(List<string> a) { MePause(); return null; }
@@ -741,7 +762,7 @@ public sealed class Program : MyGridProgram {
 
     class JNTimer : SubP
     {
-        public JNTimer() : base("Timer", "Shows the elapsed time in LCD when using the command ss.") { }
+        public JNTimer() : base("Timer", "Shows the elapsed time on \"LCD timer\" when using the command \"ss\".") { }
 
         public override SdSubP Start(ushort id) { return new TP(id, this); }
 
@@ -754,7 +775,7 @@ public sealed class Program : MyGridProgram {
 
             public TP(ushort id, SubP p) : base(id, p)
             {
-                if ((LCD = OS.P.GridTerminalSystem.GetBlockWithName("LCD") as IMyTextPanel) == null)
+                if ((LCD = OS.P.GridTerminalSystem.GetBlockWithName("LCD Timer") as IMyTextPanel) == null)
                 {
                     AddDefA(Stop, 1);
                     return;
@@ -780,7 +801,7 @@ public sealed class Program : MyGridProgram {
                 else
                 {
                     start = OS.Tick;
-                    S = AddAct(Show, 10);
+                    AddAct(ref S, Show, 10);
                 }
                 s = !s;
                 return "";
@@ -789,41 +810,35 @@ public sealed class Program : MyGridProgram {
         }
     }
 
-    class JNLST /* Lite Solar Tracking*/ : SubP
+    class JNSolarTracker : SubP
     {
-        public JNLST() : base("Lite Solar Tracking", new MyVersion(1, 0), "Simplified sctipt Lite Solar Tracking by Elfi Wolfe ported by JN") { }
+        public JNSolarTracker() : base("Solar Tracking", new MyVersion(1, 0), "Solar Tracker by JN") { }
 
-        public override SdSubP Start(ushort id) // Only one instance of the subprogram will be started
+        public override SdSubP Start(ushort id)
         {
-            if (OS.CSP<TP>()) return null;
-            else return new TP(id, this);
+            return OS.CSP<TP>() ? null : new TP(id, this);
         }
-        
-        public class TP /* This program*/ : SdSubP
+
+        class TP : SdSubP
         {
-            float SolarAlign = 0.04f; // Solar Align
-            List<IMyMotorStator> Rotors = new List<IMyMotorStator>(); // Rotors
-            List<IMySolarPanel> Panels = new List<IMySolarPanel>(); // Panels
-            List<IMyOxygenFarm> Farms = new List<IMyOxygenFarm>(); // Farms
-            List<SolarArray> SolarArrays = new List<SolarArray>(); // Solar Arrays
+            static float SolarAlign = 0.04f;
+            List<IMyMotorStator> Rotors = new List<IMyMotorStator>(); 
+            List<IMySolarPanel> Panels = new List<IMySolarPanel>(); 
+            List<IMyOxygenFarm> Farms = new List<IMyOxygenFarm>(); 
+            List<SolarArray> SolarArrays = new List<SolarArray>(); 
             CAct MA; // Main Action
-            static IMyTextPanel lcd = OS.P.GridTerminalSystem.GetBlockWithName("lcd") as IMyTextPanel; // todo remove
 
             public TP(ushort id, SubP p) : base(id, p)
             {
-                MA = AddDefA(Ready, 60 * 5); // five seconds span
+                BuildSolarArrays();
+                AddAct(ref MA, Main, 120, 60 * 3);
             }
 
-            public void Ready()
-            {
-                BuildSolarArrays();
-                MA = AddAct(Main, 100);
-            }
             public void Main()
             {
-                for (int i = 0; i < SolarArrays.Count; ++i)
+                for (int i = 0; i < SolarArrays.Count; i++)
                 {
-                    if (!SolarArrays[i].Update())
+                    if (SolarArrays[i].Update())
                     {
                         BuildSolarArrays();
                         break;
@@ -841,59 +856,54 @@ public sealed class Program : MyGridProgram {
                     OS.GTS.GetBlocksOfType(Farms, b => b.CubeGrid == v.TopGrid);
                     if (Panels.Count > 0 || Farms.Count > 0)
                     {
-                        SolarArrays.Add(new SolarArray(v, Panels, Farms, SolarAlign));
+                        SolarArrays.Add(new SolarArray(v, Panels, Farms));
                     }
                 }
             }
 
-            public class SolarArray
+            class SolarArray
             {
                 public IMyMotorStator Rotor { get; set; }
                 public List<IMySolarPanel> Panels { get; set; }
                 public List<IMyOxygenFarm> Farms { get; set; }
-                public float SpeedSetting { get; set; } // RPM
-                public float Power { get; set; } // MW
-                public float PowerOld { get; set; }
+                public float Power { get; set; }
                 public float Oxygen { get; set; }
+                public float PowerOld { get; set; }
                 public float OxygenOld { get; set; }
-                public float Direction { get; set; }
 
-                public SolarArray(IMyMotorStator r, List<IMySolarPanel> p, List<IMyOxygenFarm> f, float ss)
+                public SolarArray(IMyMotorStator r, List<IMySolarPanel> p, List<IMyOxygenFarm> f)
                 {
                     Rotor = r;
                     Panels = new List<IMySolarPanel>(p);
-                    SpeedSetting = ss;
                     Power = 0f;
                     PowerOld = 0f;
-                    Direction = 1f;
                     Farms = new List<IMyOxygenFarm>(f);
                     Oxygen = 0f;
                     OxygenOld = 0f;
                 }
-                public SolarArray(IMyMotorStator r, List<IMySolarPanel> p, float ss) : this(r, p, new List<IMyOxygenFarm>(), ss) { }
 
                 public bool Closed(IMyTerminalBlock b)
                 {
-                    if (b == null || b.WorldMatrix == MatrixD.Identity) return true;
-                    return false;
+                    return b == null || b.WorldMatrix == MatrixD.Identity;
                 }
                 public bool Update()
                 {
-                    if (Closed(Rotor)) return false;
+                    if (Closed(Rotor)) return true;
                     PowerOld = Power;
                     Power = 0f;
                     OxygenOld = Oxygen;
                     Oxygen = 0f;
-                    foreach(var v in Panels)
+                    foreach (var v in Panels)
                     {
-                        if (Closed(v)) return false;
+                        if (Closed(v)) return true;
                         Power += v.MaxOutput;
                     }
                     foreach (var v in Farms)
                     {
-                        if (Closed(v)) return false;
+                        if (Closed(v)) return true;
                         Oxygen += v.GetOutput();
                     }
+
                     float current = Power;
                     float old = PowerOld;
                     if (Panels.Count == 0 && Farms.Count > 0)
@@ -901,29 +911,345 @@ public sealed class Program : MyGridProgram {
                         current = Oxygen;
                         old = OxygenOld;
                     }
+
                     if (current == old)
                     {
-                        if (!(Rotor.TargetVelocityRPM == 0)) // Moving, power == old = Stop
-                        {
-                            Direction = Rotor.TargetVelocityRPM < 0 ? -1 : 1;
-                            Rotor.TargetVelocityRPM = 0f;
-                        }
+                        Rotor.TargetVelocityRPM = 0f;
                     }
-                    else if (!(Rotor.TargetVelocityRPM == 0) && current < old)
+                    else if (Rotor.TargetVelocityRPM != 0 && current < old)
                     {
                         Rotor.TargetVelocityRPM = -Rotor.TargetVelocityRPM; // Moving, power < old = reverse direction
                     }
-                    else if(Rotor.TargetVelocityRPM == 0)
+                    else if (Rotor.TargetVelocityRPM == 0)
                     {
-                        Rotor.TargetVelocityRPM = Direction * SpeedSetting; // Not moving, P < old, P > old = start moving
+                        Rotor.TargetVelocityRPM = SolarAlign;
                     }
-                    return true;
+                    return false;
+                }
+            }
+        }
+    }
+
+    class JNKonturC : SubP
+    {
+        public JNKonturC() : base("Controller for KONTUR C") { }
+
+        public override SdSubP Start(ushort id) { return OS.CSP<TP>() ? null : new TP(id, this); }
+
+        class TP : SdSubPCmd
+        {
+            bool start, loopturn;
+            float NormWhAng, Tangle;
+
+            float carspeed;
+            float strengthSuspModifer, heightSuspModifer;
+            bool switchingsusp;
+
+            SuspensionModes SuspensionMode;
+            DriveModes DriveMode;
+
+            string FirstStr, SecondStr, LCDriveMode, LCDSuspMode;
+
+            List<IMyMotorSuspension> Wheels;
+            IMyMotorSuspension WheelLF, WheelRF, WheelLB, WheelRB;
+
+            IMyRemoteControl RemoteDriver;
+            IMyMotorStator RotorRull;
+            IMyTextPanel DriverLCD;
+
+            enum DriveModes : byte
+            {
+                full, front, rear
+            }
+            enum SuspensionModes : byte
+            {
+                sport, offroad
+            }
+
+            CAct MA;
+
+            public TP(ushort id, SubP p) : base(id, p)
+            {
+                start = true; loopturn = false;
+                NormWhAng = 35; Tangle = 0;
+                switchingsusp = false;
+                SuspensionMode = SuspensionModes.sport; DriveMode = DriveModes.full;
+                FirstStr = ""; SecondStr = "";
+                Wheels = new List<IMyMotorSuspension>();
+                
+                if (
+                    (DriverLCD = OS.GTS.GetBlockWithName("Screen Driver") as IMyTextPanel) == null ||
+                    (WheelLF = OS.GTS.GetBlockWithName("Wheel Suspension 3x3 LF") as IMyMotorSuspension) == null ||
+                    (WheelRF = OS.GTS.GetBlockWithName("Wheel Suspension 3x3 RF") as IMyMotorSuspension) == null ||
+                    (WheelLB = OS.GTS.GetBlockWithName("Wheel Suspension 3x3 LB") as IMyMotorSuspension) == null ||
+                    (WheelRB = OS.GTS.GetBlockWithName("Wheel Suspension 3x3 RB") as IMyMotorSuspension) == null ||
+                    (RemoteDriver = OS.GTS.GetBlockWithName("Control car") as IMyRemoteControl) == null ||
+                    (RotorRull = OS.GTS.GetBlockWithName("Rotor rull") as IMyMotorStator) == null
+                )
+                {
+                    AddDefA(Stop, 1);
+                    return;
+                }
+                Wheels = new List<IMyMotorSuspension>() { WheelLF, WheelRF, WheelLB, WheelRB };
+                
+                string saved = DriverLCD.GetText();
+                if (saved != "")
+                {
+                    if (saved.Contains("front")) DriveMode = DriveModes.front;
+                    else if (saved.Contains("rear")) DriveMode = DriveModes.rear;
+                    if (saved.Contains("off-road")) SuspensionMode = SuspensionModes.offroad;
+                    if (saved.Contains("looper")) loopturn = true;
+                }
+
+                ChangeFirst();
+
+                AddAct(ref MA, Main, 1);
+
+                SetCmd(new Dictionary<string, Cmd>
+                {
+                    { "sdm", new Cmd(CmdSDM, "Switch drive mode Full/Front/Rear.") },
+                    { "ssm", new Cmd(CmdSSM, "Switch suspension mode Sport/Off road.") },
+                    { "sl", new Cmd(CmdSL, "Switch loopturn mode.")}
+                });
+            }
+
+            void Main()
+            {
+                carspeed = Convert.ToSingle(RemoteDriver.GetShipSpeed());
+                if (RemoteDriver.IsUnderControl)
+                {
+                    RotateRull();
+                    float whangle;
+                    if (carspeed >= 18)
+                        if (carspeed >= 40) whangle = 15;
+                        else whangle = 20;
+                    else whangle = NormWhAng;
+                    if (Tangle != whangle)
+                    {
+                        Tangle = whangle;
+                        foreach (IMyMotorSuspension ThisWheel in Wheels) ThisWheel.MaxSteerAngle = Tangle;
+                    }
+
+                }
+                if (switchingsusp)
+                {
+                    switchingsusp = false;
+                    foreach (IMyMotorSuspension Motor in Wheels)
+                    {
+                        Motor.Strength = Smoothing(Motor, "Strength", strengthSuspModifer, 0.15f);
+                        Motor.Height = Smoothing(Motor, "Height", heightSuspModifer, 0.0042f);
+                        if (Motor.GetValueFloat("Strength") != strengthSuspModifer || Motor.GetValueFloat("Height") != heightSuspModifer) switchingsusp = true;
+                    }
+                }
+            }
+            void ChangeFirst()
+            {
+                switch (DriveMode)
+                {
+                    case DriveModes.full:
+                        LCDriveMode = "full";
+                        break;
+                    case DriveModes.front:
+                        LCDriveMode = "front";
+                        break;
+                    case DriveModes.rear:
+                        LCDriveMode = "rear";
+                        break;
+                }
+                FirstStr = " –––Suspension manager–––\n Drive mode: " + LCDriveMode;
+                if (loopturn) FirstStr += "–looper";
+                FirstStr += "\n";
+                switch (SuspensionMode)
+                {
+                    case SuspensionModes.sport:
+                        LCDSuspMode = "sport";
+                        break;
+                    case SuspensionModes.offroad:
+                        LCDSuspMode = "off-road";
+                        break;
+                }
+                FirstStr += " Suspension mode: " + LCDSuspMode + "\n";
+
+                DriverLCD.WriteText(FirstStr + SecondStr, false);
+            }
+            void RotateRull()
+            {
+                float mult = 1, destangl, temp;
+                if (RemoteDriver.MoveIndicator.X == 0) destangl = 0;
+                else
+                {
+                    if (RemoteDriver.MoveIndicator.X < 0) mult = -1;
+                    temp = carspeed;
+                    if (temp > 50) temp = 50;
+                    destangl = Convert.ToSingle((120 - 4 * temp * temp / 100) * Math.PI / 180) * mult;
+                }
+                float turn = destangl - RotorRull.Angle;
+                RotorRull.TargetVelocityRad = turn * 5;
+            }
+            float Smoothing(IMyMotorSuspension ThisMotor, string variable, float needed, float Step)
+            {
+                float TempFloat = ThisMotor.GetValueFloat(variable), mult;
+                if (Math.Abs(TempFloat - needed) > Step)
+                {
+                    if (TempFloat < needed) mult = 1;
+                    else mult = -1;
+                    TempFloat = TempFloat + mult * Step;
+                }
+                else TempFloat = needed;
+                return TempFloat;
+            }
+
+            #region Commands
+            string CmdSDM(List<string> a)
+            {
+                if (DriveMode == DriveModes.rear) DriveMode = DriveModes.full;
+                else DriveMode++;
+                switch (DriveMode)
+                {
+                    case DriveModes.full:
+                        WheelLB.Propulsion = true;
+                        WheelRB.Propulsion = true;
+                        WheelLF.Propulsion = true;
+                        WheelRF.Propulsion = true;
+                        break;
+                    case DriveModes.front:
+                        WheelLB.Propulsion = false;
+                        WheelRB.Propulsion = false; //вырубаем задний привод
+                        WheelLF.Propulsion = true;
+                        WheelRF.Propulsion = true; //включаем передний
+                        break;
+                    case DriveModes.rear:
+                        WheelLB.Propulsion = true;
+                        WheelRB.Propulsion = true; //врубаем задний
+                        WheelLF.Propulsion = false;
+                        WheelRF.Propulsion = false; //вырубаем передний
+                        break;
+                }
+                ChangeFirst();
+                return "";
+            }
+            string CmdSSM(List<string> a)
+            {
+                if (SuspensionMode == SuspensionModes.offroad) SuspensionMode = SuspensionModes.sport;
+                else SuspensionMode++;
+                switchingsusp = true;
+                switch (SuspensionMode)
+                {
+                    case SuspensionModes.sport: 
+                        strengthSuspModifer = 25;
+                        heightSuspModifer = -0.1080F;
+                        break;
+                    case SuspensionModes.offroad: 
+                        strengthSuspModifer = 16;
+                        heightSuspModifer = -0.36F;
+                        break;
+                }
+                ChangeFirst();
+                return "";
+            }
+            string CmdSL(List<string> a)
+            {
+                float angle;
+                if (loopturn)
+                {//выключаем
+                    angle = NormWhAng;
+                    loopturn = false;
+                }
+                else
+                {//включаем
+                    angle = 45;
+                    loopturn = true;
+                }
+                WheelRF.InvertSteer = loopturn;
+                WheelRF.InvertPropulsion = loopturn;
+                WheelRB.Steering = loopturn;
+                WheelLB.Steering = loopturn;
+                WheelRB.InvertSteer = loopturn;
+                WheelRB.InvertPropulsion = loopturn;
+                foreach (IMyMotorSuspension ThisWheel in Wheels) ThisWheel.MaxSteerAngle = angle;
+                ChangeFirst();
+                return "";
+            }
+            #endregion Commands
+        }        
+    }
+
+    class JNDalnoboy : SubP
+    {
+        public JNDalnoboy() : base("DALNOBOY on-board computer", new MyVersion(1, 0)) { }
+
+        public override SdSubP Start(ushort id) { return OS.CSP<TP>() ? null : new TP(id, this); }
+
+        class TP : SdSubPCmd
+        {
+            IMyShipController ShipCtrler;
+            List<IMyMotorSuspension> LeftSusps = new List<IMyMotorSuspension>(), RightSusps = new List<IMyMotorSuspension>();
+
+            CAct MA;
+
+            public TP(ushort id, SubP p) : base(id, p)
+            {
+                // Collect suspensions
+                IMyMotorSuspension L, R;
+                for(int i = 1; i < 5; i++)
+                {
+                    if ((L = OS.GTS.GetBlockWithName($"Suspension Wheel L{i}") as IMyMotorSuspension) == null || (R = OS.GTS.GetBlockWithName($"Suspension Wheel R{i}") as IMyMotorSuspension) == null)
+                    {
+                        AddDefA(Stop, 1);
+                        return;
+                    }
+                    LeftSusps.Add(L);
+                    RightSusps.Add(R);
+                }
+
+                AddAct(ref MA, FindCtrler, 20, 1);
+            }
+
+            public void FindCtrler()
+            {
+                List<IMyShipController> SCs = new List<IMyShipController>();
+                OS.GTS.GetBlocksOfType(SCs);
+
+                foreach(var x in SCs)
+                    if (x.IsUnderControl)
+                    {
+                        ShipCtrler = x;
+                        RemAct(ref MA);
+                        AddAct(ref MA, Control, 1);
+                        break;
+                    }
+            }
+            public void Control()
+            {
+                // Check if user leave
+                if (!ShipCtrler.IsUnderControl)
+                {
+                    RemAct(ref MA);
+                    AddAct(ref MA, FindCtrler, 30);
+                    return;
                 }
 
             }
         }
     }
+
+    class JNew : SubP
+    {
+        public JNew() : base("", new MyVersion(1, 0)) { }
+
+        public override SdSubP Start(ushort id) { return new TP(id, this); }
+
+        class TP : SdSubP
+        {
+
+
+            public TP(ushort id, SubP p) : base(id, p) { }
+
+
+        }
+    }
+
     #endregion Test subprograms
 
-    //======-КОНЕЦ СКРИПТА-======
+    //======-SCRIPT ENDING-======
 }
