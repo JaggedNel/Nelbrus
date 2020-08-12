@@ -13,8 +13,10 @@ using VRage.Game.ObjectBuilders.Definitions;
 using VRage.Game.ModAPI.Ingame;
 using SpaceEngineers.Game.ModAPI.Ingame;
 using System.Linq;
+using VRage.Game.ModAPI.Ingame.Utilities;
+using System.Text.RegularExpressions;
 
-/// Nelbrus OS v.0.3.11-[07.08.20]
+/// Nelbrus OS v.0.3.12-[12.08.20]
 
 public class Program : MyGridProgram {
     //======-SCRIPT BEGINING-======
@@ -27,7 +29,8 @@ public class Program : MyGridProgram {
         OS.ISP(new JNTicker());
         OS.ISP(new JNTimer());
         OS.ISP(new JNSolarTracker());
-        OS.ISP(new JNKonturC());
+        OS.ISP(new JNDalnoboy());
+        OS.ISP(new JNSgWC());
 
         OS.Go();
     } 
@@ -216,7 +219,7 @@ public class Program : MyGridProgram {
                 else Acts[t][freq] += act;
                 AA.Add(AK, new Ad(t, freq));
             }
-            ca = new CAct(AK++, act);
+            unchecked { ca = new CAct(AK++, act); }
         }
         /// <summary>Remove action triggered by the frequency.</summary>
         protected void RemAct(ref CAct a)
@@ -228,11 +231,6 @@ public class Program : MyGridProgram {
                 {
                     var temp = OS.Tick < AA[a.ID].S ? AA[a.ID].S : (OS.Tick - AA[a.ID].S) % AA[a.ID].F == 0 && Acts.ContainsKey(OS.Tick) && Acts[OS.Tick].ContainsKey(AA[a.ID].F) ? OS.Tick : ((OS.Tick - AA[a.ID].S) / AA[a.ID].F + 1) * AA[a.ID].F + AA[a.ID].S; // Intercept of the next run-time
                     Acts[temp][AA[a.ID].F] -= a.Act;
-                    if (Acts[temp][AA[a.ID].F] == null)
-                    {
-                        if (Acts[temp].Count() == 1) Acts.Remove(temp);
-                        else Acts[temp].Remove(AA[a.ID].F);
-                    }
                 }
                 AA.Remove(a.ID);
             }
@@ -325,13 +323,15 @@ public class Program : MyGridProgram {
         public ushort K { get; private set; }
         /// <summary>Started subprograms. Mean [id, subprogram].</summary>
         Dictionary<ushort, SdSubP> SP; // todo public?
+        /// <summary>Started subprograms to close indexes.</summary>
+        List<ushort> SP2C = new List<ushort>();
         /// <summary>Internal time measurement unit.</summary>
         public uint Tick { get; private set; }
         /// <summary>Echo controller.</summary>
         public EchoController EchoCtrl { get; private set; }
         #endregion Properties
 
-        public NLB() : base(0, "NELBRUS", new MyVersion(0, 3, 10, new DateTime(2020, 03, 05)), "Your operation system.")
+        public NLB() : base(0, "NELBRUS", new MyVersion(0, 3, 12, new DateTime(2020, 08, 12)), "Your operation system.")
         {
             InitSP = new List<SubP>();
             Tick = 0;
@@ -349,10 +349,10 @@ public class Program : MyGridProgram {
             GTS = P.GridTerminalSystem;
             SetCmd(new Dictionary<string, Cmd>
             {
-                { "start", new Cmd(CmdRun, "Start initialized subprogram by id.", "/start <id> - start new subprogram, check id by /isp.") },
-                { "stop", new Cmd(CmdStop, "Stop runned subprogram by id.", "/stop <id> - stop subprogram, check id by /sp.") },
-                { "sp", new Cmd(CmdSP, "View runned subprograms or run the subprogram command.", "/sp - view runned subprograms;\n/sp <id> - view runned subprogram information;\n/sp <id> <command> [arguments] - run the subprogram command.") },
-                { "isp", new Cmd(CmdISP, "View initilized subprograms information.", "/isp - view initilized subprograms;\n/isp <id> - view initilized subprogram information.") },
+                { "start", new Cmd(CmdRun, "Start initialized subprogram by id.", "/start <id> - Start new subprogram, check id by /isp.") },
+                { "stop", new Cmd(CmdStop, "Stop runned subprogram by id.", "/stop <id> - Stop subprogram, check id by /sp.") },
+                { "sp", new Cmd(CmdSP, "View runned subprograms or run the subprogram command.", "/sp - View runned subprograms;\n/sp <id> - View runned subprogram information;\n/sp <id> <command> [arguments] - Run the subprogram command.") },
+                { "isp", new Cmd(CmdISP, "View initilized subprograms information.", "/isp - View initilized subprograms;\n/isp <id> - View initilized subprogram information.") },
                 { "clr", new Cmd(CmdClearC, "Clearing the command interface.") }, // todo переделать под отправителя
             });
             P.Runtime.UpdateFrequency = UpdateFrequency.Update1;
@@ -410,7 +410,12 @@ public class Program : MyGridProgram {
         /// <summary>Stop subprogram. Returns true if subprogram successfully stopped.</summary>
         public bool SSP(SdSubP p)
         {
-            if (p.MayStop() && p == SP[p.ID]) return SP.Remove(SP.FirstOrDefault(x => x.Value == p).Key);
+            //&& SP.Remove(SP.FirstOrDefault(x => x.Value == p).Key
+            if (p.MayStop() && p == SP[p.ID])
+            {
+                SP2C.Add(p.ID);
+                return true;
+            }
             return false;
         }
         /// <summary>This method used to process running of mother block (this programmable block). Do not use it.</summary>
@@ -419,34 +424,32 @@ public class Program : MyGridProgram {
         {
             switch (uT)
             {
-                case UpdateType.Update1: // todo refactoring
+                case UpdateType.Update1: // todo refactoring избавиться от проверок (создать список программ к закрытию)
                     #region Update1
-                    var x = new List<ushort>();
-                    foreach (ushort i in SP.Keys) x.Add(i);
-                    foreach (ushort i in x) // Iterate runned subprograms
+                    foreach (var p in SP.Values) // Iterate runned subprograms
                     { // Do actions
-                        SP[i].EAct(); // Do every tick actions
-                        if (SP.ContainsKey(i) && SP[i].Acts.ContainsKey(Tick))
+                        p.EAct(); // Do every tick actions
+                        if (p.Acts.ContainsKey(Tick))
                         {
-                            List<uint> y = new List<uint>();
-                            foreach (uint j in SP[i].Acts[Tick].Keys) y.Add(j);
-                            foreach (uint j in y) // Iterate frequencies
+                            foreach (uint j in p.Acts[Tick].Keys) // Iterate frequencies
                             {
-                                SP[i].Acts[Tick][j](); // Do actions with frequence
-                                if (SP.ContainsKey(i) && SP[i].Acts.ContainsKey(Tick) && SP[i].Acts[Tick].ContainsKey(j) && SP[i].Acts[Tick][j] != null)
+                                p.Acts[Tick][j](); // Do actions with frequence
+                                if (p.Acts[Tick][j] != null)
                                 {
-                                    if (SP[i].Acts.ContainsKey(Tick + j)) SP[i].Acts[Tick + j].Add(j, SP[i].Acts[Tick][j]); // Move
-                                    else SP[i].Acts.Add(Tick + j, new Dictionary<uint, Act>() { { j, SP[i].Acts[Tick][j] } }); // Move
-                                    SP[i].Acts.Remove(Tick); // Remove old
+                                    if (p.Acts.ContainsKey(Tick + j)) p.Acts[Tick + j].Add(j, p.Acts[Tick][j]); // Move
+                                    else p.Acts.Add(Tick + j, new Dictionary<uint, Act>() { { j, p.Acts[Tick][j] } }); // Move
                                 }
                             }
+                            p.Acts.Remove(Tick); // Remove old
                         }
-                        if (SP.ContainsKey(i) && SP[i].DefA.ContainsKey(Tick))
+                        if (p.DefA.ContainsKey(Tick)) // Deffered Actions
                         {
-                            SP[i].DefA[Tick]();
-                            if (SP.ContainsKey(i) && SP[i].DefA.ContainsKey(Tick)) SP[i].DefA.Remove(Tick);
+                            p.DefA[Tick]();
+                            p.DefA.Remove(Tick);
                         }
                     }
+                    foreach (var i in SP2C) SP.Remove(i); // Close started subprograms
+                    SP2C.Clear();
                     unchecked { Tick++; }
                     break;
                 #endregion Update1
@@ -481,7 +484,7 @@ public class Program : MyGridProgram {
             string n, m;
             List<string> a;
             CP(s.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).ToList(), out n, out a);
-            if ((m = Cmd(r, n, a)) == null || m == "")
+            if ((m = Cmd(r, n, a)) == null || string.IsNullOrEmpty(m))
                 return "Done.";
             return m;
         }
@@ -782,7 +785,7 @@ public class Program : MyGridProgram {
                 }
                 SetCmd(new Dictionary<string, Cmd>
                 {
-                    { "ss", new Cmd(CmdSS, "Start/stop timer") }
+                    { "ss", new Cmd(CmdSS, "Start/stop timer.") }
                 });
             }
 
@@ -812,7 +815,7 @@ public class Program : MyGridProgram {
 
     class JNSolarTracker : SubP
     {
-        public JNSolarTracker() : base("Solar Tracking", new MyVersion(1, 0), "Solar Tracker by JN") { }
+        public JNSolarTracker() : base("Solar Tracking", new MyVersion(1, 0)) { }
 
         public override SdSubP Start(ushort id)
         {
@@ -826,11 +829,11 @@ public class Program : MyGridProgram {
             List<IMySolarPanel> Panels = new List<IMySolarPanel>(); 
             List<IMyOxygenFarm> Farms = new List<IMyOxygenFarm>(); 
             List<SolarArray> SolarArrays = new List<SolarArray>(); 
-            CAct MA; // Main Action
+            CAct BSA, MA; // Main Action
 
             public TP(ushort id, SubP p) : base(id, p)
             {
-                BuildSolarArrays();
+                AddAct(ref BSA, BuildSolarArrays, 600);
                 AddAct(ref MA, Main, 120, 60 * 3);
             }
 
@@ -993,7 +996,7 @@ public class Program : MyGridProgram {
                 Wheels = new List<IMyMotorSuspension>() { WheelLF, WheelRF, WheelLB, WheelRB };
                 
                 string saved = DriverLCD.GetText();
-                if (saved != "")
+                if (string.IsNullOrEmpty(saved))
                 {
                     if (saved.Contains("front")) DriveMode = DriveModes.front;
                     else if (saved.Contains("rear")) DriveMode = DriveModes.rear;
@@ -1182,54 +1185,229 @@ public class Program : MyGridProgram {
 
         class TP : SdSubPCmd
         {
-            IMyShipController ShipCtrler;
-            List<IMyMotorSuspension> LeftSusps = new List<IMyMotorSuspension>(), RightSusps = new List<IMyMotorSuspension>();
+            IMyShipController Controller;
+            IMyMotorStator RotorSusp;
+            IMyMotorAdvancedStator HingeNeck;
+            List<IMyShipController> Controllers = new List<IMyShipController>();
+            List<IMyMotorAdvancedStator> Hinges = new List<IMyMotorAdvancedStator>();
+            List<IMyMotorSuspension> Wheels = new List<IMyMotorSuspension>(), BackSusps = new List<IMyMotorSuspension>();
+            Vector3D LastVel = new Vector3D();
+            float whangle, Tangle;
 
-            CAct MA;
+            CAct MA, GC;
 
             public TP(ushort id, SubP p) : base(id, p)
             {
-                // Collect suspensions
-                IMyMotorSuspension L, R;
-                for(int i = 1; i < 5; i++)
+                OS.GTS.GetBlocksOfType(Controllers);
+                RotorSusp = OS.GTS.GetBlockWithName("Suspension Rotor") as IMyMotorStator;
+                HingeNeck = OS.GTS.GetBlockWithName("Neck Hinge") as IMyMotorAdvancedStator;
+                OS.GTS.GetBlocksOfType(Hinges, x => x.CustomName.StartsWith("Suspension"));
+                OS.GTS.GetBlocksOfType(Wheels);
+                OS.GTS.GetBlocksOfType(BackSusps, x => x.CustomName.StartsWith("Suspension") && (x.CustomName.EndsWith("3") || x.CustomName.EndsWith("4")));
+
+                if (Controllers.Count == 0 || RotorSusp == null || HingeNeck == null)
+                    AddDefA(Stop, 1);
+                else
                 {
-                    if ((L = OS.GTS.GetBlockWithName($"Suspension Wheel L{i}") as IMyMotorSuspension) == null || (R = OS.GTS.GetBlockWithName($"Suspension Wheel R{i}") as IMyMotorSuspension) == null)
-                    {
-                        AddDefA(Stop, 1);
-                        return;
-                    }
-                    LeftSusps.Add(L);
-                    RightSusps.Add(R);
+                    AddAct(ref GC, GetController, 20);
+                    AddAct(ref MA, Control, 5, 1);
+                }
+            }
+
+            void Control()
+            {
+                DampSuspRot(RotorSusp);
+                foreach (var h in Hinges) DampSuspHinge(h);
+
+                var TargetVecLoc = VectorTransform(Controller.GetTotalGravity() + (LastVel - Controller.GetShipVelocities().LinearVelocity), HingeNeck.WorldMatrix.GetOrientation());
+                LastVel = Controller.GetShipVelocities().LinearVelocity;
+                var azimuthToTarget = Math.Atan2(-TargetVecLoc.X, TargetVecLoc.Z);
+                //var elevationToTarget = Math.Asin(-TargetVecLoc.Y / TargetVecLoc.Length());
+                HingeNeck.TargetVelocityRad = Turn(-(float)azimuthToTarget, HingeNeck.Angle) * 1.5f;
+                
+                if (Controller.GetShipSpeed() >= 12 && Controller.RollIndicator == 0)
+                    if (Controller.GetShipSpeed() >= 40) whangle = .17f;
+                    else whangle = .26f;
+                else whangle = .44f;
+                if (Tangle != whangle)
+                {
+                    Tangle = whangle;
+                    foreach (IMyMotorSuspension w in Wheels) w.MaxSteerAngle = Tangle;
                 }
 
-                AddAct(ref MA, FindCtrler, 20, 1);
+                //foreach (var w in BackSusps) w.InvertSteer =  Controller.RollIndicator != 0; //todo убрать
+            }
+            void GetController()
+            {
+                if (!(Controller ?? (Controller = Controllers[0])).IsUnderControl || !Controller.CanControlShip)
+                    for (int i = 1; i < Controllers.Count; i++)
+                        if (Controllers[i].IsUnderControl && Controllers[i].CanControlShip)
+                        {
+                            Controller = Controllers[i];
+                            break;
+                        }
+            }
+            void DampSuspRot(IMyMotorStator r)
+            {
+                r.TargetVelocityRPM = -r.Angle * 180 / 3.14f;
+                r.Torque = Math.Abs(r.Angle / r.UpperLimitRad * 120000);
+            }
+            void DampSuspHinge(IMyMotorAdvancedStator h)
+            {
+                h.Torque = (h.Angle + Math.Abs(h.LowerLimitRad)) / (Math.Abs(h.LowerLimitRad) + h.UpperLimitRad) * 30000;
+            }
+            /// <summary>Transfer of coordinates of Vec to Orientation coordinate system.</summary>
+            public Vector3D VectorTransform(Vector3D Vec, MatrixD Orientation)
+            {
+                // Custom
+                //return new Vector3D(Vec.Dot(Orientation.Right), Vec.Dot(Orientation.Up), Vec.Dot(Orientation.Forward));
+                //return new Vector3D(Vec.Dot(Orientation.Right), Vec.Dot(Orientation.Backward), Vec.Dot(Orientation.Down));
+                return new Vector3D(Vec.Dot(Orientation.Backward), Vec.Dot(Orientation.Backward), Vec.Dot(Orientation.Right));
             }
 
-            public void FindCtrler()
+            private float Turn(float DesiredAngle, float CurrentAngle)
             {
-                List<IMyShipController> SCs = new List<IMyShipController>();
-                OS.GTS.GetBlocksOfType(SCs);
-
-                foreach(var x in SCs)
-                    if (x.IsUnderControl)
-                    {
-                        ShipCtrler = x;
-                        RemAct(ref MA);
-                        AddAct(ref MA, Control, 1);
-                        break;
-                    }
+                float Turn = DesiredAngle - CurrentAngle;
+                Turn = Normalize(Turn);
+                return Turn;
             }
-            public void Control()
+            public float Normalize(float Angle)
             {
-                // Check if user leave
-                if (!ShipCtrler.IsUnderControl)
+                if (Angle < -Math.PI) Angle += 2 * (float)Math.PI;
+                else if (Angle > Math.PI) Angle -= 2 * (float)Math.PI;
+                return Angle;
+            }
+        }
+    }
+    
+    class JNSgWC : SubP
+    {
+        // Some fragments of this program are adopted from
+        // "SWCS | Whip's Subgrid Wheel Control Script"
+        // by Whiplash141
+        public JNSgWC() : base("Subgrid Wheel Controller", new MyVersion(1, 0), "This script allows you to control steering and propulsion of wheels attached via pistons or rotors using regular movement keys! Wheels will also emulate brake inputs as well. Adapted script by Whiplash141.") { }
+
+        public override SdSubP Start(ushort id) { return new TP(id, this); }
+
+        class TP : SdSubPCmd
+        {
+            string IgnoreNameTag = "Ignore";
+            float brakingConstant = 0.1f;
+            bool detectBlocksOverConnectors = false;
+
+            IMyShipController Controller = null;
+            Vector3D avgWheelPosition;
+
+            List<IMyMotorSuspension> SubgridWheels = new List<IMyMotorSuspension>();
+            List<IMyMotorSuspension> Wheels = new List<IMyMotorSuspension>();
+            List<IMyShipController> Controllers = new List<IMyShipController>();
+
+            CAct GB, MA, GC;
+
+            public TP(ushort id, SubP p) : base(id, p)
+            {
+                AddAct(ref GB, GetBlocks, 600);
+                SetCmd(new Dictionary<string, Cmd>
                 {
+                    { "int", new Cmd(CmdINT, "Get or set ignore name tag.", "/int - View current ignore name tag;\n/int <string> - Set new ignore name tag.") },
+                    { "bc", new Cmd(CmdBC, "Get or set breaking constant.", "/bc - View current breaking constant;\n/bc <float> - Set new breaking constant.")},
+                    { "dboc", new Cmd(CmdDBOC, "Get or set detection blocks over connectors.", "/dboc - View current detection blocks over connectors;\n/dboc <bool> - Set new detection blocks over connectors")}
+                });
+            }
+
+            void Control()
+            {
+                var brakes = Controller.MoveIndicator.Y > 0 || Controller.HandBrake;
+                var velocity = Vector3D.TransformNormal(Controller.GetShipVelocities().LinearVelocity, MatrixD.Transpose(Controller.WorldMatrix)) * brakingConstant;
+                avgWheelPosition = Vector3D.Zero;
+                foreach (var w in Wheels) avgWheelPosition += w.GetPosition();
+                avgWheelPosition /= Wheels.Count;
+
+                foreach (var w in SubgridWheels)
+                {
+                    w.SetValue("Propulsion override", -Math.Sign(Math.Round(Vector3D.Dot(w.WorldMatrix.Up, Controller.WorldMatrix.Right), 2)) * (Convert.ToSingle(brakes) * (float)velocity.Z + Convert.ToSingle(!brakes) * w.Power * 0.01f * -Controller.MoveIndicator.Z));
+                    w.SetValue("Steer override", Math.Sign(Math.Sign(Math.Round(Vector3D.Dot(w.WorldMatrix.Forward, Controller.WorldMatrix.Up), 2)) * Math.Sign(Vector3D.Dot(w.GetPosition() - avgWheelPosition, Controller.WorldMatrix.Forward)) * Controller.MoveIndicator.X) + Controller.RollIndicator);
+                }
+            }
+            void GetBlocks()
+            {
+                OS.GTS.GetBlocksOfType(Controllers, x => !x.CustomName.Contains(IgnoreNameTag) && (detectBlocksOverConnectors || OS.P.Me.IsSameConstructAs(x)));
+                OS.GTS.GetBlocksOfType(Wheels, x => !x.CustomName.Contains(IgnoreNameTag) && (detectBlocksOverConnectors || OS.P.Me.IsSameConstructAs(x)));
+                if (Controllers.Count != 0 && Wheels.Count != 0)
+                {
+                    GetController();
+
+                    GetSubgridWheels(Controller);
+                    if (SubgridWheels.Count != 0 && MA.ID == 0)
+                    {
+                        AddAct(ref GC, GetController, 15, 17);
+                        AddAct(ref MA, Control, 5, 1);
+                    }
+                }
+                else
+                {
+                    RemAct(ref GC);
                     RemAct(ref MA);
-                    AddAct(ref MA, FindCtrler, 30);
-                    return;
                 }
-
             }
+            void GetController()
+            {
+                if (!(Controller ?? (Controller = Controllers[0])).IsUnderControl || !Controller.CanControlShip)
+                    for (int i = 1; i < Controllers.Count; i++)
+                        if (Controllers[i].IsUnderControl && Controllers[i].CanControlShip)
+                        {
+                            Controller = Controllers[i];
+                            break;
+                        }
+                SynchronizeHandBrakes(Controller);
+            }
+            void SynchronizeHandBrakes(IMyShipController c)
+            {
+                foreach (var b in Controllers) b.HandBrake = c.HandBrake;
+            }
+            void GetSubgridWheels(IMyTerminalBlock reference)
+            {
+                SubgridWheels.Clear();
+
+                foreach (var w in Wheels)
+                {
+                    if (reference.CubeGrid != w.CubeGrid) SubgridWheels.Add(w);
+                    else
+                    {
+                        w.SetValue("Propulsion override", 0f);
+                        w.SetValue("Steer override", 0f);
+                    }
+                }
+            }
+
+            #region Commands
+            string CmdINT(List<string> a)
+            {
+                if (a.Count == 0) return $"Current ignore name tag is {NLB.F.Brckt(IgnoreNameTag)}";
+                else if (string.IsNullOrWhiteSpace(a[0])) return mAE;
+                else return $"New ignore name tag is {NLB.F.Brckt(IgnoreNameTag = a[0])}";
+            }
+            string CmdBC(List<string> a)
+            {
+                if (a.Count == 0) return $"Current breaking constant is {NLB.F.Brckt(brakingConstant.ToString())}";
+                else {
+                    float t;
+                    if (float.TryParse(a[0], out t)) return $"New breaking constant is {NLB.F.Brckt((brakingConstant = t).ToString())}";
+                    else return mAE;
+                }
+            }
+            string CmdDBOC(List<string> a)
+            {
+                if (a.Count == 0) return $"Current detection blocks over connectors is {NLB.F.Brckt(detectBlocksOverConnectors.ToString())}";
+                else
+                {
+                    bool t;
+                    if (bool.TryParse(a[0], out t)) return $"New detection blocks over connectors is {NLB.F.Brckt((detectBlocksOverConnectors = t).ToString())}";
+                    else return mAE;
+                }
+                    
+            }
+            #endregion Commands
         }
     }
 
@@ -1242,10 +1420,18 @@ public class Program : MyGridProgram {
         class TP : SdSubP
         {
 
+            CAct MA;
 
-            public TP(ushort id, SubP p) : base(id, p) { }
+            public TP(ushort id, SubP p) : base(id, p)
+            {
+                
+                AddAct(ref MA, Main, 1);
+            }
 
-
+            void Main()
+            {
+                
+            }
         }
     }
 
