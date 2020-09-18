@@ -16,8 +16,6 @@ using System.Linq;
 using VRage.Game.ModAPI.Ingame.Utilities;
 using System.Text.RegularExpressions;
 
-/// Nelbrus OS v.0.3.12-[12.08.20]
-
 public class Program : MyGridProgram {
     //======-SCRIPT BEGINING-======
 
@@ -30,12 +28,14 @@ public class Program : MyGridProgram {
         OS.ISP(new JNTimer());
         OS.ISP(new JNSolarTracker());
         OS.ISP(new JNDalnoboy());
-        OS.ISP(new JNSgWC());
+        OS.ISP(new JNMGS());
 
         OS.Go();
-    } 
+    }
 
     #region Core zone
+    // Nelbrus OS v.0.4.0-[18.09.20]
+    
     /// <summary>Operation System NELBRUS instance.</summary>
     readonly static NLB OS = new NLB(); // Initializing OS
 
@@ -66,16 +66,6 @@ public class Program : MyGridProgram {
     /// <summary>Integer request without arguments.</summary>
     delegate int ReqI();
 
-    /// <summary>Custom Action used to do it later or with frequency.</summary>
-    struct CAct
-    {
-        public readonly uint ID;
-        public readonly Act Act;
-
-        /// <summary>New Custom Action.</summary>
-        /// <param name="a">Action.</param>
-        public CAct(uint id, Act a) { ID = id; Act = a; }
-    }
     /// <summary>Command.</summary>
     struct Cmd
     {
@@ -151,35 +141,66 @@ public class Program : MyGridProgram {
         /// <returns>Started subprogram.</returns>
         public virtual SdSubP Start(ushort id) { return null; }
     }
-    /// <summary>Basic started subprogram.</summary>
+    /// <summary>Basic class for started subprogram.</summary>
     class SdSubP : SubP 
     {
         public readonly ushort ID;
         /// <summary>Time when subprogram started.</summary>
         public readonly DateTime ST;
+        /// <summary>Custom Action used to do it later or with frequency.</summary>
+        public class CAct
+        {
+            public readonly uint ID;
+            public readonly Act Act;
+
+            /// <summary>New Custom Action.</summary>
+            /// <param name="a">Action.</param>
+            public CAct(uint id, Act a) { ID = id; Act = a; }
+            /// <summary> Empty value action. </summary>
+            public CAct() : this(0, null) { }
+        }
         /// <summary>Every tick actions.</summary>
         public Act EAct { get; private set; }
         /// <summary>Actions with frequency registry. Mean [tick, [frequency, actions]].</summary>
         public Dictionary<uint, Dictionary<uint, Act>> Acts { get; private set; }
+
+        struct ActToAdd
+        {
+            public CAct cact {get; private set;}
+            public uint f { get; private set; }
+            public uint s { get; private set; }
+
+            public ActToAdd(ref CAct cact, uint f, uint s) { this.cact = cact; this.f = f; this.s = s; }
+        }
+
+        List<ActToAdd> ActsToAdd = new List<ActToAdd>();
+
+        List<CAct> ActsToRem = new List<CAct>();
+        List<CAct> DefAToRem = new List<CAct>();
+
         /// <summary>Deffered Actions registry. Mean [tick, actions].</summary>
         public Dictionary<uint, Act> DefA { get; private set; }
         /// <summary>Action Adress used to find it in registry.</summary>
         struct Ad
         {
             /// <summary>When Started</summary>
-            public uint S { get; } 
+            public uint S { get; }
             /// <summary>Action Frequency</summary>
             public uint F { get; }
+            public bool Add { get; set; }
+            public bool Remove { get; set; }
 
             /// <summary>New action Adress</summary>
             /// <param name="s">Time when started</param>
             /// <param name="f">Frequency of action</param>
-            public Ad(uint s, uint f) { S = s; F = f; }
+            public Ad(uint s, uint f) { S = s; F = f; Add = true; Remove = false; }
         }
         /// <summary>Key for new action.</summary>
         uint AK;
         /// <summary>Actions Archive. Mean [id, action adress].</summary>
         Dictionary<uint, Ad> AA;
+        /// <summary> Terminate message container. Used to stop unworkable subprogram when its run. </summary>
+        public string TerminateMsg { get; private set; }
 
         public SdSubP(ushort id, string name, MyVersion v = null, string info = NA) : base(name, v, info) {
             ID = id;
@@ -195,45 +216,100 @@ public class Program : MyGridProgram {
         public SdSubP(ushort id, SubP p) : this(id, p.Name, p.V, p.Info) { }
 
         #region Actions management
-        // todo RepAct (Replace Action)
+        /// <summary> OS function to add and delete custom actions. Do not use it. </summary>
+        public void UpdActions()
+        {
+            // Add new
+            foreach(var i in ActsToAdd)
+            {
+                if (i.cact.ID == 0)
+                    continue;
+                if (i.f < 2)
+                {
+                    if (i.f == 1)
+                    {
+                        // Every tick action
+                        EAct += i.cact.Act;
+                        i.cact.Act();
+                    }
+                    else
+                    {
+                        // Deffered Action
+                        if (DefA.ContainsKey(OS.Tick + i.s))
+                            DefA[OS.Tick + i.s] += i.cact.Act;
+                        else
+                            DefA.Add(OS.Tick + i.s, i.cact.Act);
+                    }
+                }
+                else
+                {
+                    uint t; // When starts
+                    if (i.s == 0)
+                    {
+                        t = OS.Tick + i.f;
+                        i.cact.Act();
+                    }
+                    else
+                        t = OS.Tick + i.s;
+                    if (!Acts.ContainsKey(t))
+                        Acts.Add(t, new Dictionary<uint, Act>() { { i.f, i.cact.Act } });
+                    else if (!Acts[t].ContainsKey(i.f))
+                        Acts[t].Add(i.f, i.cact.Act);
+                    else
+                        Acts[t][i.f] += i.cact.Act;
+                }
+            }
+            ActsToAdd.Clear();
+
+            // Remove
+            foreach(var i in ActsToRem)
+            {
+                if (AA.ContainsKey(i.ID))
+                {
+                    if (AA[i.ID].F < 2)
+                        EAct -= i.Act;
+                    else
+                    {
+                        var intercept = OS.Tick < AA[i.ID].S ? AA[i.ID].S : (((OS.Tick - AA[i.ID].S) / AA[i.ID].F) + 1) * AA[i.ID].F + AA[i.ID].S;
+                        Acts[intercept][AA[i.ID].F] -= i.Act;
+                        if (Acts[intercept][AA[i.ID].F] == null)
+                        {
+                            Acts[intercept].Remove(AA[i.ID].F);
+                            if (Acts[intercept].Count == 0)
+                                Acts.Remove(intercept);
+                        }
+                    }
+                        
+                    AA.Remove(i.ID);
+                }
+            }
+            ActsToRem.Clear();
+            foreach(var i in DefAToRem)
+            {
+                if (DefA.ContainsKey(i.ID))
+                {
+                    DefA[i.ID] -= i.Act;
+                    if (DefA[i.ID] == null)
+                        DefA.Remove(i.ID);
+                }
+            }
+            DefAToRem.Clear();
+        }
         /// <summary>Add new action triggered by the frequency freq and that will be runned first time with tick span.</summary>
         /// <param name="ca">Action storage in subprogram</param>
         protected void AddAct(ref CAct ca, Act act, uint freq, uint span = 0)
         {
-            if (freq < 2) // Zero regarded like one
-            {
-                EAct += act;
-                AA.Add(AK, new Ad(OS.Tick, 1));
-            }
-            else
-            {
-                uint t; // When starts
-                if (span == 0)
-                {
-                    t = OS.Tick + freq;
-                    act();
-                }
-                else t = OS.Tick + span; 
-                if (!Acts.ContainsKey(t)) Acts.Add(t, new Dictionary<uint, Act>() { { freq, act } });
-                else if (!Acts[t].ContainsKey(freq)) Acts[t].Add(freq, act);
-                else Acts[t][freq] += act;
-                AA.Add(AK, new Ad(t, freq));
-            }
-            unchecked { ca = new CAct(AK++, act); }
+            ca = new CAct(AK == uint.MaxValue ? 1 : AK, act);
+            freq = freq < 1 ? 1 : freq;
+            AA.Add(AK == uint.MaxValue ? 1 : AK++, new Ad(OS.Tick + (span == 0 ? freq : span), freq));
+            ActsToAdd.Add(new ActToAdd(ref ca, freq, span));
         }
         /// <summary>Remove action triggered by the frequency.</summary>
         protected void RemAct(ref CAct a)
         {
-            if (AA.ContainsKey(a.ID))
-            {
-                if (AA[a.ID].F == 1) EAct -= a.Act;
-                else
-                {
-                    var temp = OS.Tick < AA[a.ID].S ? AA[a.ID].S : (OS.Tick - AA[a.ID].S) % AA[a.ID].F == 0 && Acts.ContainsKey(OS.Tick) && Acts[OS.Tick].ContainsKey(AA[a.ID].F) ? OS.Tick : ((OS.Tick - AA[a.ID].S) / AA[a.ID].F + 1) * AA[a.ID].F + AA[a.ID].S; // Intercept of the next run-time
-                    Acts[temp][AA[a.ID].F] -= a.Act;
-                }
-                AA.Remove(a.ID);
-            }
+            if (a.ID == 0)
+                return;
+            ActsToRem.Add(new CAct(a.ID, a.Act));
             a = new CAct(); // Removed actions have default id value 0
         }
         /// <summary>Change action triggered by the frequency.</summary>
@@ -248,19 +324,17 @@ public class Program : MyGridProgram {
             ca = t;
         }
         /// <summary>Add new deferred action that will run once after time span.</summary>
-        protected CAct AddDefA(Act act, uint span)
+        protected void AddDefA(ref CAct ca, Act act, uint span)
         {
-            if (DefA.ContainsKey(OS.Tick + span)) DefA[OS.Tick + span] += act;
-            else DefA.Add(OS.Tick + span, act);
-            return new CAct(OS.Tick + span, act);
+            ca = new CAct(OS.Tick + span, act);
+            ActsToAdd.Add(new ActToAdd(ref ca, 0, span));
         }
         /// <summary>Remove deferred action.</summary>
         protected void RemDefA(ref CAct a)
         {
-            if (DefA.ContainsKey(a.ID))
+            if (DefA.ContainsKey(a.ID) && DefA[a.ID] != null)
             {
                 DefA[a.ID] -= a.Act;
-                if (DefA[a.ID] == null) DefA.Remove(a.ID);
             }
             a = new CAct(); // Removed actions have default id value 0
         }
@@ -270,6 +344,13 @@ public class Program : MyGridProgram {
         public virtual void Stop() { OS.SSP(this); }
         /// <summary>Returns true to let OS stop this subprogram. WARNING: Do not forget stop child subprograms there too.</summary>
         public virtual bool MayStop() { return true; }
+        /// <summary> Stop subprogram immediately. /// </summary>
+        /// <param name="msg">Message about termination reason.</param>
+        public void Terminate(string msg = "") {
+            TerminateMsg = string.IsNullOrEmpty(msg) ? "OS> Subprogram can not continue to work." : msg;
+            OS.SSP(this);
+            Stop();
+        }
     }
     /// <summary>Started subprogram with console commands support.</summary>
     class SdSubPCmd : SdSubP
@@ -331,13 +412,13 @@ public class Program : MyGridProgram {
         public EchoController EchoCtrl { get; private set; }
         #endregion Properties
 
-        public NLB() : base(0, "NELBRUS", new MyVersion(0, 3, 12, new DateTime(2020, 08, 12)), "Your operation system.")
+        public NLB() : base(0, "NELBRUS", new MyVersion(0, 4, 0, new DateTime(2020, 09, 18)), "Your operation system.")
         {
             InitSP = new List<SubP>();
             Tick = 0;
             SP = new Dictionary<ushort, SdSubP>() { { 0, this } };
             K = 1;
-            EchoCtrl = new CEcho(); // Initialize default echo controller
+            EchoCtrl = new SEcho(); // Initialize default echo controller
         }
 
         #region Methods
@@ -359,15 +440,15 @@ public class Program : MyGridProgram {
         }
         /// <summary>Initialize other echo controller. Use it between Ready and Go methods.</summary>
         /// <param name="c">New custom echo controller.</param>
-        public void SetEchoCtrl(CEcho c) // 
+        public void SetEchoCtrl(SEcho c) // 
         {
-            if (CSP<CEcho>()) return; // The method will be run when Echo Controller is not runned
+            if (CSP<SEcho>()) return; // The method will be run when Echo Controller is not runned
             EchoCtrl = c;
         }
         /// <summary>This method used to initialize OS in RSG stage. Do not use it for other.</summary>
         public void Go()
         {
-            if (CSP<CEcho>()) return; // The method will be run once
+            if (CSP<SEcho>()) return; // The method will be run once
             RSP(EchoCtrl); // Run echo controller
             // todo Run only runned the last time subprograms
             for (int i = 0; i < InitSP.Count; i++) RSP(InitSP[i]); // Run all initialized subprograms
@@ -380,8 +461,9 @@ public class Program : MyGridProgram {
             if (!InitSP.Contains(p)) InitSP.Add(p);
         }
         /// <summary>Returns true if subprogram of T type is currently started. Example: OS.CSP<NELBRUS>().</summary> 
-        public bool CSP<T>()where T : SdSubP //todo check
-        {
+        public bool CSP<T>() where T : SdSubP
+        { 
+            //todo check
             foreach (var i in SP.Values)
             {
                 if (i is T) return true;
@@ -398,21 +480,25 @@ public class Program : MyGridProgram {
                 var t = p.Start(K);
                 if (t != null)
                 {
-                    SP.Add(K++, t);
-                    return t;
+                    if (string.IsNullOrEmpty(t.TerminateMsg))
+                    {
+                        SP.Add(K++, t);
+                        return t;
+                    }
+                    else
+                        EchoCtrl.CShow($"Subprogram {t.Name} can not start by cause:\n{t.TerminateMsg}");
                 }
-                else
-                {
-                    return null;
-                }
+                return null;
             }
         }
         /// <summary>Stop subprogram. Returns true if subprogram successfully stopped.</summary>
         public bool SSP(SdSubP p)
         {
             //&& SP.Remove(SP.FirstOrDefault(x => x.Value == p).Key
-            if (p.MayStop() && p == SP[p.ID])
+            if ((!string.IsNullOrEmpty(p.TerminateMsg) || p.MayStop()) && SP.ContainsKey(p.ID) && p == SP[p.ID] && !SP2C.Contains(p.ID))
             {
+                if (!string.IsNullOrEmpty(p.TerminateMsg))
+                    EchoCtrl.CShow($"Subprogram ID:{p.ID} \"{p.Name}\" terminated by cause:\n{p.TerminateMsg}");
                 SP2C.Add(p.ID);
                 return true;
             }
@@ -424,21 +510,35 @@ public class Program : MyGridProgram {
         {
             switch (uT)
             {
-                case UpdateType.Update1: // todo refactoring избавиться от проверок (создать список программ к закрытию)
+                case UpdateType.Update1:
                     #region Update1
                     foreach (var p in SP.Values) // Iterate runned subprograms
                     { // Do actions
                         p.EAct(); // Do every tick actions
                         if (p.Acts.ContainsKey(Tick))
                         {
+                            Dictionary<uint, Act> t = new Dictionary<uint, Act>();
+                            Dictionary<uint, Dictionary<uint, Act>> t2 = new Dictionary<uint, Dictionary<uint, Act>>();
                             foreach (uint j in p.Acts[Tick].Keys) // Iterate frequencies
                             {
                                 p.Acts[Tick][j](); // Do actions with frequence
-                                if (p.Acts[Tick][j] != null)
+                                if (p.Acts.ContainsKey(Tick + j))
                                 {
-                                    if (p.Acts.ContainsKey(Tick + j)) p.Acts[Tick + j].Add(j, p.Acts[Tick][j]); // Move
-                                    else p.Acts.Add(Tick + j, new Dictionary<uint, Act>() { { j, p.Acts[Tick][j] } }); // Move
+                                    if (p.Acts[Tick + j].ContainsKey(j))
+                                        p.Acts[Tick + j][j] += p.Acts[Tick][j];
+                                    else
+                                        t.Add(j, p.Acts[Tick][j]);
                                 }
+                                else
+                                    t2.Add(j, p.Acts[Tick]);
+                            }
+                            foreach(var i in t)
+                            {
+                                p.Acts[Tick + i.Key].Add(i.Key, i.Value);
+                            }
+                            foreach(var i in t2)
+                            {
+                                p.Acts.Add(Tick + i.Key, new Dictionary<uint, Act> { { i.Key, i.Value[i.Key] }, });
                             }
                             p.Acts.Remove(Tick); // Remove old
                         }
@@ -447,8 +547,11 @@ public class Program : MyGridProgram {
                             p.DefA[Tick]();
                             p.DefA.Remove(Tick);
                         }
+                        p.UpdActions();
                     }
-                    foreach (var i in SP2C) SP.Remove(i); // Close started subprograms
+                    // Close started subprograms
+                    foreach (var i in SP2C)
+                        SP.Remove(i);
                     SP2C.Clear();
                     unchecked { Tick++; }
                     break;
@@ -563,12 +666,13 @@ public class Program : MyGridProgram {
                 else return $"Initialized subprogram with id [{k}] not exist.";
             else return mAE;
         }
-        string CmdClearC(List<string> a) { EchoCtrl.CClr(); return null; } // todo переделать под отправителя
+        string CmdClearC(List<string> a) { EchoCtrl.CClr(); return " "; } // todo переделать под отправителя
         #endregion Commands
 
+        /// <summary> Basic echo controller class. </summary>
         public abstract class EchoController : SdSubP
         {
-            /// <summary>Duration of the custom information show.</summary>
+            /// <summary>Show duration of the custom information.</summary>
             public uint DT { get; set; }
 
             public EchoController(string n, MyVersion v = null, string i = NA) : base(1, n, v, i) { }
@@ -578,32 +682,40 @@ public class Program : MyGridProgram {
             /// <summary>Refresh information at echo.</summary>
             public virtual void Refresh()
             {
-                OS.P.Echo("OS NELBRUS and used echo controller working but not configured.");
+                OS.P.Echo("OS NELBRUS is working. And used echo controller too but not configured.");
             }
             /// <summary>Show custom info at echo.</summary>
-            public virtual void CShow(string s) { }
+            public virtual void CShow(string s)
+            {
+                OS.P.Echo(s);
+            }
             /// <summary>Remove custom info in echo.</summary>
-            public virtual void CClr() { }
+            public virtual void CClr()
+            {
+                Refresh();
+            }
         }
-        public class CEcho : EchoController
+        /// <summary> Standart echo controller. </summary>
+        public class SEcho : EchoController
         {
             /// <summary>Fields to write at echo. Mean [id, field (string, integer, request, StringBuilder ...)].</summary>
-            protected Dictionary<byte, object[]> Fields;
+            protected Dictionary<byte, List<object>> Fields;
             /// <summary>Operation indicator.</summary>
             protected Ind OInd;
             /// <summary>Refresh action.</summary>
-            CAct R;
+            CAct R = new CAct();
             /// <summary>Custom information remover.</summary>
-            CAct C;
+            CAct[] C = new CAct[10];
+            enum FieldNames : byte { Base, Custom = 2 };
 
-            public CEcho() : base("Custom echo controller") { }
+            public SEcho() : base("Standart echo controller") { }
 
             public override SdSubP Start(ushort id)
             {
                 OInd = new Ind(0, 30, new string[] { "(._.)", "   ( l: )", "      (.–.)", "         ( :l )", "            (._.)" });
-                Fields = new Dictionary<byte, object[]> {
-                    { 0, new object[] { $"OS NELBRUS v.{(string)OS.V}\nIs worked ", (Req)OInd.Get , "\nInitialized subprograms: ", (ReqI)OS.GetCountISP, "\nRunned subprograms: ", (ReqI)OS.GetCountRSP } },
-                    { 1, new object[] { } }
+                Fields = new Dictionary<byte, List<object>> {
+                    { (byte)FieldNames.Base, new List<object> { new List<object> { $"OS NELBRUS v.{(string)OS.V}\nIs worked ", (Req)OInd.Get, "\nInitialized subprograms: ", (ReqI)OS.GetCountISP, "\nRunned subprograms: ", (ReqI)OS.GetCountRSP } } },
+                    { (byte)FieldNames.Custom, new List<object> { } } // Custom information
                 };
                 AddAct(ref R, Refresh + (Act)OInd.Update, 30, 1);
                 DT = F.TTT(45);
@@ -615,23 +727,58 @@ public class Program : MyGridProgram {
                 var t = new StringBuilder();
                 foreach (var f in Fields.Values)
                 {
-                    for(int i = 0; i < f.Count(); i++) t.Append(f[i] is Req ? ((Req)f[i])() : f[i] is ReqI ? ((ReqI)f[i])().ToString() : f[i].ToString());
-                    if (f.Count() != 0) t.Append('\n');
+                    for(int i = 0; i < f.Count(); i++)
+                    {
+                        if (f[i] is List<object>)
+                            t.Append(Parse(f[i] as List<object>));
+                        else
+                            t.Append(GetObj(f[i]));
+                        t.Append("\n");
+                    }
                 }
+                t.Append("\n\n\n\n\n\n\n");
                 OS.P.Echo(t.ToString());
+            }
+            StringBuilder Parse(List<object> line)
+            {
+                StringBuilder res = new StringBuilder();
+                for(int i = 0; i < line.Count(); i++)
+                    res.Append(GetObj(line[i]));
+                return res;
+            }
+            string GetObj(object obj)
+            {
+                return obj is Req ? ((Req)obj)() : obj is ReqI ? ((ReqI)obj)().ToString() : obj.ToString();
             }
             /// <summary>Show custom info at echo.</summary>
             public override void CShow(string s)
             {
-                RemDefA(ref C);
-                Fields[1] = new string[] { s };
-                C = AddDefA(CClr, DT);
+                Fields[(byte)FieldNames.Custom].Insert(0, s);
+                for (int i = C.Count() - 1; i > 0; i--)
+                    C[i] = C[i - 1];
+                C[0] = new CAct();
+                AddDefA(ref C[0], CTimeRemove, DT);
+                Refresh();
+            }
+            /// <summary> Remove custom information after the time has elapsed. </summary>
+            void CTimeRemove()
+            {
+                var i = Fields[(byte)FieldNames.Custom].Count;
+                if (i > 0)
+                {
+                    Fields[(byte)FieldNames.Custom].RemoveAt(i - 1);
+                    C[i - 1] = null;
+                }
             }
             /// <summary>Remove custom info in echo.</summary>
             public override void CClr()
             {
-                RemDefA(ref C);
-                Fields[1] = new string[] { };
+                for (int i = 0; i < C.Count() && C[i] != null; i++)
+                {
+                    RemDefA(ref C[i]);
+                    C[i] = null;
+                }
+                Fields[(byte)FieldNames.Custom].Clear();
             }
         }
         /// <summary>Help functions.</summary>
@@ -730,13 +877,13 @@ public class Program : MyGridProgram {
         class TP /* This Program */ : SdSubPCmd
         {
             IMyTextPanel LCD { get; }
-            CAct Act; // Show current tick on text panel
+            CAct Act = new CAct(); // Show current tick on text panel
 
             public TP(ushort id, SubP p) : base(id, p)
             {
                 if((LCD = OS.P.GridTerminalSystem.GetBlockWithName("LCD") as IMyTextPanel) == null)
                 {
-                    AddDefA(Stop, 1);
+                    Terminate("\"LCD\" not found.");
                     return;
                 }
                 AddAct(ref Act, Show, 20);
@@ -746,7 +893,6 @@ public class Program : MyGridProgram {
                     { "play", new Cmd(CmdPlay, "Continue show current tick.") 
 }
                 });
-                //AddPenA(MyPause, 201); // Example
             }
 
             void Show()
@@ -775,13 +921,13 @@ public class Program : MyGridProgram {
             IMyTextPanel LCD;
             uint start;
             bool s = false;
-            CAct S;
+            CAct S = new CAct();
 
             public TP(ushort id, SubP p) : base(id, p)
             {
                 if ((LCD = OS.P.GridTerminalSystem.GetBlockWithName("LCD Timer") as IMyTextPanel) == null)
                 {
-                    AddDefA(Stop, 1);
+                    Terminate("\"LCD Timer\" not found.");
                     return;
                 }
                 SetCmd(new Dictionary<string, Cmd>
@@ -827,12 +973,13 @@ public class Program : MyGridProgram {
 
         class TP : SdSubP
         {
-            static float SolarAlign = 0.04f;
+            static float SolarAlign = 0.2f;
+            string ignoreTag = "ST-X";
             List<IMyMotorStator> Rotors = new List<IMyMotorStator>(); 
             List<IMySolarPanel> Panels = new List<IMySolarPanel>(); 
             List<IMyOxygenFarm> Farms = new List<IMyOxygenFarm>(); 
             List<SolarArray> SolarArrays = new List<SolarArray>(); 
-            CAct BSA, MA; // Main Action
+            CAct BSA = new CAct(), MA = new CAct();
 
             public TP(ushort id, SubP p) : base(id, p)
             {
@@ -840,7 +987,7 @@ public class Program : MyGridProgram {
                 AddAct(ref MA, Main, 120, 60 * 3);
             }
 
-            public void Main()
+            void Main()
             {
                 for (int i = 0; i < SolarArrays.Count; i++)
                 {
@@ -857,7 +1004,7 @@ public class Program : MyGridProgram {
                 OS.GTS.GetBlocksOfType(Rotors);
                 foreach (var v in Rotors)
                 {
-                    if (!v.IsSameConstructAs(OS.P.Me) || v.CustomName.EndsWith("ST-X")) continue;
+                    if (!v.IsSameConstructAs(OS.P.Me) || v.CustomName.EndsWith(ignoreTag) || v.CustomData.Contains(ignoreTag)) continue;
                     OS.GTS.GetBlocksOfType(Panels, b => b.CubeGrid == v.TopGrid);
                     OS.GTS.GetBlocksOfType(Farms, b => b.CubeGrid == v.TopGrid);
                     if (Panels.Count > 0 || Farms.Count > 0)
@@ -942,36 +1089,43 @@ public class Program : MyGridProgram {
 
         public override SdSubP Start(ushort id) { return OS.CSP<TP>() ? null : new TP(id, this); }
 
-        class TP : SdSubPCmd
+        public class TP : SdSubPCmd
         {
             IMyShipController Controller;
-            IMyMotorStator RotorSusp;
-            IMyMotorAdvancedStator HingeNeck;
+            IMyMotorStator RotorSusp, RotorSolar;
+            IMyMotorAdvancedStator HingeNeck, HingeSolar;
+            List<IMyMotorAdvancedStator> HingesSolar = new List<IMyMotorAdvancedStator>();
             List<IMyShipController> Controllers = new List<IMyShipController>();
             List<IMyMotorAdvancedStator> Hinges = new List<IMyMotorAdvancedStator>();
             List<IMyMotorSuspension> Wheels = new List<IMyMotorSuspension>();
             float whangle, Tangle;
+            bool Solar = true;
 
-            CAct MA, GC;
+            CAct MA = new CAct(), GC = new CAct(), TS = new CAct();
 
             public TP(ushort id, SubP p) : base(id, p)
             {
-                OS.GTS.GetBlocksOfType(Controllers);
+                OS.GTS.GetBlocksOfType(Controllers, x => x.CanControlShip);
                 RotorSusp = OS.GTS.GetBlockWithName("Suspension Rotor") as IMyMotorStator;
                 HingeNeck = OS.GTS.GetBlockWithName("Neck Hinge") as IMyMotorAdvancedStator;
+                RotorSolar = OS.GTS.GetBlockWithName("Solar Rotor") as IMyMotorStator;
+                HingeSolar = OS.GTS.GetBlockWithName("Solar Hinge") as IMyMotorAdvancedStator;
+                OS.GTS.GetBlocksOfType(HingesSolar, x => x.CustomName.StartsWith("Solar Hinge") && x.CustomName != "Solar Hinge");
                 OS.GTS.GetBlocksOfType(Hinges, x => x.CustomName.StartsWith("Suspension"));
                 OS.GTS.GetBlocksOfType(Wheels);
+                SetCmd("tsp", new Cmd(CmdTurnSolar, "Turn solar panels"));
 
                 if (Controllers.Count == 0 || RotorSusp == null || HingeNeck == null)
-                    AddDefA(Stop, 1);
+                    Terminate("Dalnoboy blocks not found.");
                 else
                 {
+                    if (HingeSolar == null || RotorSolar == null)
+                        Solar = false;
                     AddAct(ref GC, GetController, 20);
                     AddAct(ref MA, Control, 5, 1);
                 }
             }
-
-
+            
             void Control()
             {
 
@@ -1015,45 +1169,69 @@ public class Program : MyGridProgram {
                 + h.Angle / Math.Abs(h.LowerLimitRad) * 30000
                 + (float)(2 * p / Math.PI) * Math.Sign(Vector3D.Dot(h.GetPosition() - HingeNeck.GetPosition(), HingeNeck.WorldMatrix.Up)) * 20000
                 + (float)(2 * r / Math.PI) * Math.Sign(Vector3D.Dot(h.GetPosition() - HingeNeck.GetPosition(), HingeNeck.WorldMatrix.Forward)) * 20000
-                ;   
-                h.Torque = T > 0 ? T : 10;
+                ;
+                byte upLegs = (byte)Convert.ToSingle(Controller.MoveIndicator.Y < 0 && ((Vector3D.Dot(h.GetPosition() - HingeNeck.GetPosition(), HingeNeck.WorldMatrix.Up) < 0 && Controller.MoveIndicator.Z <= 0) || (Vector3D.Dot(h.GetPosition() - HingeNeck.GetPosition(), HingeNeck.WorldMatrix.Up) > 0 && Controller.MoveIndicator.Z > 0)));
+                h.Torque = Convert.ToSingle(T > 0) * T + upLegs * 100000;
+                h.TargetVelocityRPM = upLegs * 80 - 40;
             }            
             /// <summary>Transfer of coordinates of Vec to Orientation coordinate system.</summary>
-            public Vector3D CustVectorTransform(Vector3D Vec, MatrixD Orientation)
+            Vector3D CustVectorTransform(Vector3D Vec, MatrixD Orientation)
             {
                 // standart
                 //return new Vector3D(Vec.Dot(Orientation.Right), Vec.Dot(Orientation.Up), Vec.Dot(Orientation.Forward));
                 return new Vector3D(Vec.Dot(Orientation.Backward), Vec.Dot(Orientation.Up), Vec.Dot(Orientation.Right));
             }
 
-            private float Turn(float DesiredAngle, float CurrentAngle)
+            float Turn(float DesiredAngle, float CurrentAngle)
             {
                 float Turn = DesiredAngle - CurrentAngle;
                 Turn = Normalize(Turn);
                 return Turn;
             }
-            public float Normalize(float Angle)
+            float Normalize(float Angle)
             {
                 if (Angle < -Math.PI) Angle += 2 * (float)Math.PI;
                 else if (Angle > Math.PI) Angle -= 2 * (float)Math.PI;
                 return Angle;
             }
+
+            public void TurnSolar()
+            {
+                if (RotorSolar.Angle < .3 || RotorSolar.Angle > 2 * Math.PI - .45)
+                {
+                    HingeSolar.TargetVelocityRad *= -1;
+                    RotorSolar.TargetVelocityRad = 0;
+                    RemAct(ref TS);
+                }
+                else
+                    RotorSolar.TargetVelocityRad = 1;
+            }
+
+            string CmdTurnSolar(List<string> a)
+            {
+                if (!Solar)
+                    return "Dalnoboy solar panels not available!";
+                foreach (var i in HingesSolar)
+                    i.TargetVelocityRad *= -1;
+                AddAct(ref TS, TurnSolar, 30);
+                return "";
+            }
         }
     }
 
-    class JNSgWC : SubP
+    class JNMGS : SubP
     {
         // Some fragments of this program are adopted from
         // "SWCS | Whip's Subgrid Wheel Control Script"
         // by Whiplash141
-        public JNSgWC() : base("Subgrid Wheel Controller", new MyVersion(1, 0), "This script allows you to control steering and propulsion of wheels attached via pistons or rotors using regular movement keys! Wheels will also emulate brake inputs as well. Adapted script by Whiplash141.") { }
+        public JNMGS() : base("Multigrid Suspension", new MyVersion(1, 0), "Allows you to control wheels placed on any subgrid using regular movement keys.") { }
 
-        public override SdSubP Start(ushort id) { return new TP(id, this); }
+        public override SdSubP Start(ushort id) { return OS.CSP<TP>() ? null : new TP(id, this); }
 
         class TP : SdSubPCmd
         {
             string IgnoreNameTag = "Ignore";
-            float brakingConstant = 0.1f;
+            float brakingConstant = 0.4f;
             bool detectBlocksOverConnectors = false;
 
             IMyShipController Controller = null;
@@ -1063,11 +1241,11 @@ public class Program : MyGridProgram {
             List<IMyMotorSuspension> Wheels = new List<IMyMotorSuspension>();
             List<IMyShipController> Controllers = new List<IMyShipController>();
 
-            CAct GB, MA, GC;
+            CAct GB = new CAct(), MA = new CAct(), GC = new CAct();
 
             public TP(ushort id, SubP p) : base(id, p)
             {
-                AddAct(ref GB, GetBlocks, 600);
+                AddAct(ref GB, GetBlocks, 600, 30);
                 SetCmd(new Dictionary<string, Cmd>
                 {
                     { "int", new Cmd(CmdINT, "Get or set ignore name tag.", "/int - View current ignore name tag;\n/int <string> - Set new ignore name tag.") },
@@ -1086,7 +1264,7 @@ public class Program : MyGridProgram {
 
                 foreach (var w in SubgridWheels)
                 {
-                    w.SetValue("Propulsion override", -Math.Sign(Math.Round(Vector3D.Dot(w.WorldMatrix.Up, Controller.WorldMatrix.Right), 2)) * (Convert.ToSingle(brakes) * (float)velocity.Z + Convert.ToSingle(!brakes) * w.Power * 0.01f * -Controller.MoveIndicator.Z));
+                    w.SetValue("Propulsion override", -Math.Sign(Math.Round(Vector3D.Dot(w.WorldMatrix.Up, Controller.WorldMatrix.Right), 2)) * (Convert.ToSingle(brakes && Controller.GetShipSpeed() > 1) * (float)velocity.Z + Convert.ToSingle(!brakes) * w.Power * 0.01f * -Controller.MoveIndicator.Z));
                     w.SetValue("Steer override", Math.Sign(Math.Round(Vector3D.Dot(w.WorldMatrix.Forward, Controller.WorldMatrix.Up), 2)) * Math.Sign(Vector3D.Dot(w.GetPosition() - avgWheelPosition, Controller.WorldMatrix.Forward)) * Controller.MoveIndicator.X + Controller.RollIndicator);
                 }
             }
@@ -1172,16 +1350,16 @@ public class Program : MyGridProgram {
             #endregion Commands
         }
     }
-
-    class JNKonturC : SubP
+    
+    class JNKontur : SubP
     {
-        public JNKonturC() : base("Controller for KONTUR C") { }
+        public JNKontur() : base("Controller for KONTUR") { }
 
         public override SdSubP Start(ushort id) { return OS.CSP<TP>() ? null : new TP(id, this); }
 
         class TP : SdSubPCmd
         {
-            bool start, loopturn;
+            bool loopturn;
             float NormWhAng, Tangle;
 
             float carspeed;
@@ -1203,11 +1381,11 @@ public class Program : MyGridProgram {
             enum DriveModes : byte { full, front, rear }
             enum SuspensionModes : byte { sport, offroad }
 
-            CAct MA;
+            CAct MA = new CAct();
 
             public TP(ushort id, SubP p) : base(id, p)
             {
-                start = true; loopturn = false;
+                loopturn = false;
                 NormWhAng = 35; Tangle = 0;
                 switchingsusp = false;
                 SuspensionMode = SuspensionModes.sport; DriveMode = DriveModes.full;
@@ -1224,7 +1402,7 @@ public class Program : MyGridProgram {
                     (RotorRull = OS.GTS.GetBlockWithName("Rotor rull") as IMyMotorStator) == null
                 )
                 {
-                    AddDefA(Stop, 1);
+                    Terminate("Kontur blocks not found.");
                     return;
                 }
                 Wheels = new List<IMyMotorSuspension>() { WheelLF, WheelRF, WheelLB, WheelRB };
@@ -1415,12 +1593,12 @@ public class Program : MyGridProgram {
     {
         public JNew() : base("", new MyVersion(1, 0)) { }
 
-        public override SdSubP Start(ushort id) { return new TP(id, this); }
+        public override SdSubP Start(ushort id) { return new TP(id, this); } // return OS.CSP<TP>() ? null : new TP(id, this);
 
         class TP : SdSubP
         {
 
-            CAct MA;
+            CAct MA = new CAct();
 
             public TP(ushort id, SubP p) : base(id, p)
             {
