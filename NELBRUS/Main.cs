@@ -178,7 +178,7 @@ public class Program : MyGridProgram {
         List<CAct> ActsToRem = new List<CAct>();
         List<CAct> DefAToRem = new List<CAct>();
 
-        /// <summary>Deffered Actions registry. Mean [tick, actions].</summary>
+        /// <summary>Deferred Actions registry. Mean [tick, actions].</summary>
         public Dictionary<uint, Act> DefA { get; private set; }
         /// <summary>Action Adress used to find it in registry.</summary>
         struct Ad
@@ -234,7 +234,7 @@ public class Program : MyGridProgram {
                     }
                     else
                     {
-                        // Deffered Action
+                        // Deferred Action
                         if (DefA.ContainsKey(OS.Tick + i.s))
                             DefA[OS.Tick + i.s] += i.cact.Act;
                         else
@@ -542,7 +542,7 @@ public class Program : MyGridProgram {
                             }
                             p.Acts.Remove(Tick); // Remove old
                         }
-                        if (p.DefA.ContainsKey(Tick)) // Deffered Actions
+                        if (p.DefA.ContainsKey(Tick)) // Deferred Actions
                         {
                             p.DefA[Tick]();
                             p.DefA.Remove(Tick);
