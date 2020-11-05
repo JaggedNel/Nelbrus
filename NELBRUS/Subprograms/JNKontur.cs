@@ -20,7 +20,12 @@ public partial class Program : MyGridProgram
 {
     //======-SUBPROGRAM BEGINING-======
 
-    class JNKontur : SubP
+    JNKontur iJNKontur = new JNKontur();
+    /// <summary>
+    /// On-board control system for buggy Kontur.
+    /// Steam Workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=1382409219
+    /// </summary>
+    class JNKontur : InitSubP
     {
         public JNKontur() : base("Controller for KONTUR") { }
 

@@ -20,7 +20,12 @@ public partial class Program : MyGridProgram
 {
     //======-SUBPROGRAM BEGINING-======
 
-    class JNSolarTracker : SubP
+    JNSolarTracker iJNSolarTracker = new JNSolarTracker();
+    /// <summary>
+    /// Solar Tracking system.
+    /// Steam Workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=2232417828
+    /// </summary>
+    class JNSolarTracker : InitSubP
     {
         public JNSolarTracker() : base("Solar Tracking", new MyVersion(1, 0)) { }
 

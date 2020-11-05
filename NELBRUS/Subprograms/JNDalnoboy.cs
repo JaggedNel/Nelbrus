@@ -20,7 +20,12 @@ public partial class Program : MyGridProgram
 {
     //======-SUBPROGRAM BEGINING-======
 
-    class JNDalnoboy : SubP
+    JNDalnoboy iJNDalnoboy = new JNDalnoboy();
+    /// <summary>
+    /// On-board system for smart rover Dalnoboy.
+    /// Steam Workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=2190992795
+    /// </summary>
+    class JNDalnoboy : InitSubP
     {
         public JNDalnoboy() : base("DALNOBOY on-board computer", new MyVersion(1, 0)) { }
 

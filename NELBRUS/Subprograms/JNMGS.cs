@@ -20,7 +20,12 @@ public partial class Program : MyGridProgram
 {
     //======-SUBPROGRAM BEGINING-======
 
-    class JNMGS : SubP
+    JNMGS iJNMGS = new JNMGS();
+    /// <summary>
+    /// Multigrid Suspension system.
+    /// Steam Workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=2232464611
+    /// </summary>
+    class JNMGS : InitSubP
     {
         // Some fragments of this program are adopted from
         // "SWCS | Whip's Subgrid Wheel Control Script"
