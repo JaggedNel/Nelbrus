@@ -15,12 +15,13 @@ using SpaceEngineers.Game.ModAPI.Ingame;
 using System.Linq;
 using VRage.Game.ModAPI.Ingame.Utilities;
 using System.Text.RegularExpressions;
+//#error version
 
 public partial class Program : MyGridProgram {
-    //======-SCRIPT BEGINING-======
+    //======-SCRIPT BEGINNING-======
     
     #region Core zone
-    // Nelbrus OS v.0.5.0-[05.11.20]
+    // Nelbrus OS v.0.5.1-[28.01.21]
     
     /// <summary>Operation System NELBRUS instance.</summary>
     readonly static NLB OS = new NLB(); // Initializing OS
@@ -47,8 +48,6 @@ public partial class Program : MyGridProgram {
     /// <summary>Argument exception message.</summary>
     public const string mAE = "Argument exception. " + mTUH;
 
-    /// <summary>Action.</summary>
-    delegate void Act();
     /// <summary>Request without arguments.</summary>
     delegate string Req();
     /// <summary>String request with string arguments used for commands.</summary>

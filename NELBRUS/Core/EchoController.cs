@@ -20,7 +20,7 @@ public partial class Program : MyGridProgram
 {
     sealed partial class NLB : SdSubPCmd
     {
-        //======-SCRIPT BEGINING-======
+        //======-SCRIPT BEGINNING-======
 
         /// <summary> Basic echo controller class. </summary>
         public abstract class EchoController : SdSubP

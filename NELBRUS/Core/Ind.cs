@@ -18,7 +18,7 @@ using System.Text.RegularExpressions;
 
 public partial class Program : MyGridProgram
 {
-    //======-SCRIPT BEGINING-======
+    //======-SCRIPT BEGINNING-======
 
     /// <summary>Indicator automat.</summary>
     class Ind

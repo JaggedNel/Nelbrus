@@ -6,6 +6,24 @@
     <Authors>JaggedNel</Authors>
     <RootNamespace />
   </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>6</LangVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <NoWarn>1701;1702;</NoWarn>
+    <WarningsAsErrors>NU1605;</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Core\hostfxr.dll" />
+    <None Remove="Core\hostpolicy.dll" />
+    <None Remove="Core\ScriptBuilder.deps.json" />
+    <None Remove="Core\ScriptBuilder.dll" />
+    <None Remove="Core\ScriptBuilder.exe" />
+    <None Remove="Core\ScriptBuilder.pdb" />
+    <None Remove="Core\ScriptBuilder.runtimeconfig.dev.json" />
+    <None Remove="Core\ScriptBuilder.runtimeconfig.json" />
+  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="Sandbox.Common">

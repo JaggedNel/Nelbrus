@@ -18,26 +18,31 @@ using System.Text.RegularExpressions;
 
 public partial class Program : MyGridProgram
 {
-    //======-SCRIPT BEGINING-======
+    //======-SCRIPT BEGINNING-======
     
+    public class Info
+    {
+        public string Name { get; set; }
+        public string Description { get; set; }
+    }
+
     /// <summary>Basic subprogram class.</summary>
     abstract class SubP
     {
-        public string Name { get; protected set; }
+        public Info I { get; private set; }
         public MyVersion V { get; }
-        public string Info { get; protected set; }
 
-        public SubP(string name, MyVersion v = null, string info = "Description " + NA + ".")
+        public SubP(string name, MyVersion v = null, string description = "Description " + NA + ".")
         {
-            Name = name;
+            I.Name = name;
             V = v;
-            Info = info;
+            I.Description = description;
         }
-        public SubP(string name, string info)
+        public SubP(string name, string description)
         {
-            Name = name;
+            I.Name = name;
             V = null;
-            Info = info;
+            I.Description = description;
         }
     }
 

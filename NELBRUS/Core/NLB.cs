@@ -18,7 +18,7 @@ using System.Text.RegularExpressions;
 
 public partial class Program : MyGridProgram
 {
-    //======-SCRIPT BEGINING-======
+    //======-SCRIPT BEGINNING-======
 
     /// <summary>OS NELBRUS class.</summary>
     sealed partial class NLB : SdSubPCmd
@@ -42,7 +42,7 @@ public partial class Program : MyGridProgram
         public EchoController EchoCtrl { get; private set; }
         #endregion Properties
 
-        public NLB() : base(0, "NELBRUS", new MyVersion(0, 5, 0, new DateTime(2020, 11, 5)), "Your operation system.")
+        public NLB() : base(0, "NELBRUS", new MyVersion(0, 5, 1, new DateTime(2021, 1, 28)), "Your operation system.")
         {
             InitSP = new List<InitSubP>();
             Tick = 0;
@@ -70,15 +70,17 @@ public partial class Program : MyGridProgram
         }
         /// <summary>Initialize other echo controller. Use it between Ready and Go methods.</summary>
         /// <param name="c">New custom echo controller.</param>
-        public void SetEchoCtrl(SEcho c) // 
+        public void SetEchoCtrl(SEcho c)
         {
-            if (!CSP<SEcho>()) EchoCtrl = c; // The method will be run when Echo Controller is not runned
+            if (SP.ContainsKey(1))
+                return;
+            EchoCtrl = c; // The method will be run when Echo Controller is not runned
         }
-        /// <summary>This method used to initialize OS in RSG stage. Do not use it for other.</summary>
+        /// <summary>This method used to initialize OS in RSG stage. Do not use it.</summary>
         public void Go()
         {
-            if (CSP<SEcho>()) return; // The method will be run once
-            // todo Run only runned the last time subprograms
+            if (SP.ContainsKey(1)) // Run only runned the last time subprograms
+                return;
             SP.Add(1, EchoCtrl);
             for (int i = 0; i < InitSP.Count; i++) RSP(InitSP[i]); // Run all initialized subprograms
         }
@@ -89,34 +91,34 @@ public partial class Program : MyGridProgram
         {
             if (!InitSP.Contains(p)) InitSP.Add(p);
         }
-        /// <summary>Returns true if subprogram of T type is currently started. Example: OS.CSP<NELBRUS>().</summary> 
-        public bool CSP<T>() where T : SdSubP
-        {
-            //todo check
-            foreach (var i in SP.Values)
-            {
-                if (i is T) return true;
-            }
-            return false;
-        }
-        /// <summary>Returns true if subprogram of this type is currently started. Example: OS.CSP(OS).</summary>
-        public bool CSP<T>(T p) where T : SdSubP { return CSP<T>(); }
         /// <summary>Run new subprogram.</summary>
         public SdSubP RSP(InitSubP p)
         {
             unchecked
             {
                 while (SP.ContainsKey(K)) K++;
-                var t = p.Start(K);
+                var t = p.Start();
                 if (t != null)
                 {
                     if (string.IsNullOrEmpty(t.TerminateMsg))
                     {
+                        if (t.ID != K)
+                        {
+                            // todo добавить скобки
+                            EchoCtrl.CShow($"Subprogram {F.Brckt(t.I.Name)} can not start due to having invalid id."); /// #ERROR
+                            return null;
+                        }
+                        if (CSP(t))
+                        {
+                            // todo срабатывает ошибочно, добавить скобки и ниже
+                            EchoCtrl.CShow($"Subprogram {F.Brckt(t.I.Name)} already running."); /// #ERROR
+                            return null;
+                        }
                         SP.Add(K++, t);
                         return t;
                     }
                     else
-                        EchoCtrl.CShow($"Subprogram {t.Name} can not start by cause:\n{t.TerminateMsg}");
+                        EchoCtrl.CShow($"Subprogram {F.Brckt(t.I.Name)} can not start due by:\n{t.TerminateMsg}"); /// #ERROR
                 }
                 return null;
             }
@@ -125,10 +127,10 @@ public partial class Program : MyGridProgram
         public bool SSP(SdSubP p)
         {
             //&& SP.Remove(SP.FirstOrDefault(x => x.Value == p).Key
-            if ((!string.IsNullOrEmpty(p.TerminateMsg) || p.MayStop()) && SP.ContainsKey(p.ID) && p == SP[p.ID] && !SP2C.Contains(p.ID))
+            if ((!string.IsNullOrEmpty(p.TerminateMsg) || p.MayStop()) && SP.ContainsKey(p.ID) && !SP2C.Contains(p.ID))
             {
                 if (!string.IsNullOrEmpty(p.TerminateMsg))
-                    EchoCtrl.CShow($"Subprogram ID:{p.ID} \"{p.Name}\" terminated by cause:\n{p.TerminateMsg}");
+                    EchoCtrl.CShow($"Subprogram ID:{p.ID} \"{p.I.Name}\" terminated by cause:\n{p.TerminateMsg}");
                 SP2C.Add(p.ID);
                 return true;
             }
@@ -250,7 +252,7 @@ public partial class Program : MyGridProgram
             ushort i;
             if (a.Count() > 0 && ushort.TryParse(a[0], out i))
                 if (InitSP.Count > i)
-                    return OS.RSP(InitSP[i]) == null ? $"Attempt to run new subprogram {F.Brckt(InitSP[i].Name)} failed." : $"New subprogram {F.Brckt(InitSP[i].Name)} runned.";
+                    return OS.RSP(InitSP[i]) == null ? $"Attempt to run new subprogram {F.Brckt(InitSP[i].I.Name)} failed." : $"New subprogram {F.Brckt(InitSP[i].I.Name)} runned.";
                 else return $"Initialized subprogram with id [{i}] not exist. {mTUH}";
             else return mAE;
         }
@@ -260,7 +262,7 @@ public partial class Program : MyGridProgram
             if (a.Count() > 0 && ushort.TryParse(a[0], out i))
                 if (SP.ContainsKey(i))
                 {
-                    string r = $"Subprogram {F.Brckt(SP[i].Name)} ";
+                    string r = $"Subprogram {F.Brckt(SP[i].I.Name)} ";
                     return r + (SSP(SP[i]) ? "successfully stopped." : $"can`t be stopped now.");
                 }
                 else return $"Subprogram with id [{i}] not exist. {mTUH}";
@@ -278,7 +280,7 @@ public partial class Program : MyGridProgram
             if (ushort.TryParse(a[0], out k))
                 if (SP.ContainsKey(k))
                     if (a.Count == 1) return $"Runned subprogram information:\n{F.SPI(SP[k], true)}";
-                    else return SP[k] is SdSubPCmd ? Cmd((SP[k] as SdSubPCmd).CmdR, a[1], a.GetRange(2, a.Count - 2)) : $"Subprogram {SP[k].Name} does not support commands.";
+                    else return SP[k] is SdSubPCmd ? Cmd((SP[k] as SdSubPCmd).CmdR, a[1], a.GetRange(2, a.Count - 2)) : $"Subprogram {SP[k].I.Name} does not support commands.";
                 else return $"Subprogram with id [{k}] not exist.";
             else return mAE;
         }

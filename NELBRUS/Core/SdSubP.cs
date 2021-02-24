@@ -18,14 +18,16 @@ using System.Text.RegularExpressions;
 
 public partial class Program : MyGridProgram
 {
-    //======-SCRIPT BEGINING-======
+    //======-SCRIPT BEGINNING-======
 
     /// <summary>Basic class for running subprogram.</summary>
     class SdSubP : SubP
     {
         public readonly ushort ID;
-        /// <summary>Time when subprogram started.</summary>
+        /// <summary>The start time of the program.</summary>
         public readonly DateTime ST;
+        /// <summary>Action.</summary>
+        public delegate void Act();
         /// <summary>Custom Action used to do it later or with frequency.</summary>
         public struct CAct
         {
@@ -91,7 +93,7 @@ public partial class Program : MyGridProgram
         }
         public SdSubP(ushort id, string name, string info) : this(id, name, null, info) { }
         /// <summary>Used by NELBRUS in start to run new subprogram.</summary>
-        public SdSubP(ushort id, SubP p) : this(id, p.Name, p.V, p.Info) { }
+        public SdSubP(ushort id, SubP p) : this(id, p.Name, p.V, p.Description) { }
 
         #region Actions management
         /// <summary> OS function to add and delete custom actions. Do not use it. </summary>

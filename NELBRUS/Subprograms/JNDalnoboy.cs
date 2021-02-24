@@ -29,7 +29,7 @@ public partial class Program : MyGridProgram
     {
         public JNDalnoboy() : base("DALNOBOY on-board computer", new MyVersion(1, 0)) { }
 
-        public override SdSubP Start(ushort id) { return OS.CSP<TP>() ? null : new TP(id, this); }
+        public override SdSubP Start(ushort id) { return new TP(id, this); }
 
         public class TP : SdSubPCmd
         {

@@ -20,7 +20,7 @@ public partial class Program : MyGridProgram
 {
     sealed partial class NLB : SdSubPCmd
     {
-        //======-SCRIPT BEGINING-======
+        //======-SCRIPT BEGINNING-======
         
         /// <summary>Help functions.</summary>
         public abstract class F
@@ -71,7 +71,7 @@ public partial class Program : MyGridProgram
             public static string SPI(SubP p, bool i = false)
             {
                 string r = p.V == null ? $"{Brckt(p.Name)}" : $"{Brckt(p.Name)} v.{(string)p.V}";
-                return i ? r + $"\n{p.Info}{(p is SdSubP ? $"\nWas launched at [{(p as SdSubP).ST.ToString()}].\nCommands support: {p is SdSubPCmd}." : "")}" : r;
+                return i ? r + $"\n{p.Description}{(p is SdSubP ? $"\nWas launched at [{(p as SdSubP).ST.ToString()}].\nCommands support: {p is SdSubPCmd}." : "")}" : r;
             }
         }
 

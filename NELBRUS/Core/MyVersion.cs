@@ -18,7 +18,7 @@ using System.Text.RegularExpressions;
 
 public partial class Program : MyGridProgram
 {
-    //======-SCRIPT BEGINING-======
+    //======-SCRIPT BEGINNING-======
 
     /// <summary>Represents the version number of an component or complex. Example: 2.0.3-[23.12.2019].</summary>
     class MyVersion

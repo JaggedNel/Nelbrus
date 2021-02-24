@@ -18,23 +18,23 @@ using System.Text.RegularExpressions;
 
 public partial class Program : MyGridProgram
 {
-    //======-SCRIPT BEGINING-======
+    //======-SCRIPT BEGINNING-======
 
     /// <summary>
-    /// Basic class to initilize subprograms
+    /// Basic class for subprograms initilizer
     /// </summary>
     class InitSubP : SubP
     {
         public InitSubP(string name, MyVersion v = null, string info = "Description " + NA + ".") : base(name, v, info)
         {
             OS.ISP(this);
-        }
+        }   
         public InitSubP(string name, string info) : this(name, null, info) { }
 
         /// <summary>Run new subprogram.</summary>
         /// <param name="id">Identificator of new subprogram.</param>
         /// <returns>Started subprogram.</returns>
-        public virtual SdSubP Start(ushort id) { return null; }
+        public virtual SdSubP Start() { return null; }
     }
 
     //======-SCRIPT ENDING-======

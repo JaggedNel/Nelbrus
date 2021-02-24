@@ -18,7 +18,7 @@ using System.Text.RegularExpressions;
 
 public partial class Program : MyGridProgram
 {
-    //======-SCRIPT BEGINING-======
+    //======-SCRIPT BEGINNING-======
 
     /// <summary>Runnig subprogram with console commands support.</summary>
     class SdSubPCmd : SdSubP
@@ -32,7 +32,7 @@ public partial class Program : MyGridProgram
         }
         public SdSubPCmd(ushort id, string name, string info) : this(id, name, null, info) { }
         /// <summary>Used by NELBRUS in start method to run new subprogram.</summary>
-        public SdSubPCmd(ushort id, SubP p) : this(id, p.Name, p.V, p.Info) { }
+        public SdSubPCmd(ushort id, SubP p) : this(id, p.Name, p.V, p.Description) { }
 
         /// <summary>Set new console command.</summary>
         /// <param name="n">Command name.</param>
